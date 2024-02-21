@@ -1,0 +1,199 @@
+---
+title: "Reef To Ridge Biodiversity Survey analyses"
+format: pdf
+editor: visual
+---
+
+## Introduction
+
+We studied different aspects of the wildlife community along an altitudinal transect in southern Costa Rica. We started at the Osa Peninsula, close to sea level, and studied sites along the peninsula and into the mainland, going all the way to the mountains at the Parque Internacional La Amistad (PILA).
+
+### Dung beetle survey
+
+We collected dung beetles (Scarabeidae) using pitfall traps. Traps were baited with carrion or dung. We identified the dung beetles to the lowest taxonomic level (usually species or genus) and counted the number of individuals per species in every sample. We calculated richness as the total number of distinct species in a sample, and abundance as the total number of beetles of all species in the sample.
+
+### Camera-trap survey
+
+We placed motion-activated cameras along the linear transect. We set cameras 1 km apart from each other along the transect. Motion-activated cameras inform about the presence of different species of mammals, as well as relative abundance of the same species at different locations, or of different species (although the latter needs to be carefully interpreted).
+
+```{r}
+
+#|echo=FALSE
+library(tidyverse)
+library(corrplot)
+```
+
+#### Ordination
+
+```{r}
+sp_mat <- DAT %>% group_by(Site, Species) %>% count() %>% pivot_wider(names_from = Species, values_from = n, values_fill = 0) %>% ungroup() %>% select(-1) 
+mds <- metaMDS(sp_mat)
+plot(mds,  type = 'none', las=1)
+ordiellipse(mds,env_mat[,3],draw = "polygon", col = hcl.colors(2))
+# plot(envfit(mds, env_mat[,3]), col = 'darkred')
+text(mds, display = 'species', cex = 0.8)
+legend("bottomright", legend = c("PILA","Corcovado"),fill = hcl.colors(2))
+```
+
+#### JSDM
+
+We fit a joint species distribution model to analyze the occupancy probability of different species, and how the expected occupancy is affected by environmental covariates such as land cover and connectivity.
+
+```{r}
+library(sjSDM)
+DAT <- read_csv("../Data/combined_records.csv")
+occ_data_bin <- DAT %>% 
+  distinct(Site, Species) %>%
+  mutate(n=1) %>% 
+  pivot_wider(names_from = Species, values_from = n, values_fill = 0) %>% 
+  column_to_rownames("Site") %>% 
+  as.matrix()
+env_mat <- tibble(Site = rownames(occ_data_bin)) %>%
+  left_join(distinct(all_stn_effort, Site,lat,long)) %>% 
+  mutate(area = ifelse(grepl(x = Site, pattern = "PILA"), 1,0)) %>% 
+  column_to_rownames("Site") %>% 
+  as.matrix()
+occ_models <- list()
+# fit a basic model with no biotic interactions or spatial autocorrelation.
+occ_models[["basic"]] <- sjSDM(Y = occ_data_bin, env = linear(data = scale(env_mat), formula = ~area), # scales env. covariates: canopy, dist to road, dist to pa, forest cover (land use), evi
+               se = TRUE, family=binomial("probit"), device = "cpu")
+```
+
+```{r}
+plot(occ_models$basic)
+```
+
+```{r}
+XY <- sf::sf_project("EPSG:4326","EPSG:5367",env_mat[,2:1])
+colnames(XY) <- c("x","y")
+occ_models[["spatial"]] <- sjSDM(Y = occ_data_bin, 
+                                 env = linear(data = scale(env_mat), formula = ~area), # scales env. covariates: canopy, dist to road, dist to pa, forest cover (land use), evi
+               spatial = linear(data = scale(XY), formula = ~0+x:y), 
+               se = TRUE, 
+               family=binomial("probit"), 
+               device = "cpu")
+plot(occ_models$spatial)
+```
+
+```{r}
+spModAOV <- anova(occ_models$spatial)
+plot(spModAOV, internal = T)
+```
+
+```{r}
+occ_rsquared <- sapply(occ_models, Rsquared)
+occ_loglik <- sapply(occ_models, logLik)
+cbind(occ_loglik, occ_rsquared)
+```
+
+```{r}
+bestmod <- occ_models$basic
+bestmod_summary <- summary(bestmod)
+
+bestmodcoefs <- data.frame(coef(bestmod)[[1]][,-1])
+names(bestmodcoefs) <- bestmod$names[-1]
+bestmodcoefs$sp <- bestmod$species
+bestmodcoefs <- pivot_longer(bestmodcoefs, cols = 1, names_to = "coef", values_to = "value")
+# significance
+sigVals <- sigLabel <- data.frame(t(bestmod_summary$P)[,-1])
+names(sigVals) <- names(sigLabel) <- bestmod$names[-1]
+sigLabel[bestmod$weights[[1]][,-1]>0,1] <- "+"
+sigLabel[bestmod$weights[[1]][,-1]<0,1] <- "-"
+sigLabel[sigVals$area>0.05 | is.na(sigVals$area),] <- ""
+# sigLabel <- replace(sigLabel,bestmod$weights[[1]][,-1]>0,values = "+") %>% 
+#   replace(bestmod$weights[[1]][,-1]<0,values = "-") %>% 
+#   replace(sigLabel>0.05, "")
+sigLabel$sp <- bestmod$species
+sigLabel <- pivot_longer(sigLabel, cols = 1, names_to = "coef", values_to = "text")
+
+# plot
+ggplot(bestmodcoefs, aes(x=coef, y=fct_reorder(sp, value)))+
+  geom_tile(aes(fill = value))+
+  scale_fill_gradient2(limits = c(-3,3))+
+  # theme_void()+
+  theme(axis.text.x = element_text(angle = 45, size = 9, hjust = 0), 
+        # legend.position = 'none',
+        axis.title = element_blank())+
+  scale_x_discrete(expand = expansion(mult = c(0.2,0.5)), position = 'top', labels = c("Area"))+
+  geom_text(data=left_join(bestmodcoefs,sigLabel), aes(label=text), vjust=0.5) -> jsdm_coef_plot
+jsdm_coef_plot
+```
+
+```{r}
+# arrange species by their dissimilarity for correlation matrix
+sp_hclust_order <- hclust(dist(cov2cor(getCov(bestmod))))$order
+# import common names database
+common <- read.csv("../Data/species_commonName.csv")
+common_hclust <- data.frame(common, order = sp_hclust_order)
+
+corrmat <- matrix(nrow = length(sp_hclust_order), ncol = length(sp_hclust_order))
+for (i in seq_along(sp_hclust_order)) {
+  for (j in seq_along(sp_hclust_order)) {
+    corrmat[i,j] <- cov2cor(getCov(bestmod))[sp_hclust_order[i],sp_hclust_order[j]]
+  }
+}
+
+# base R plot
+par(mar = c(2,15,10,5), las=2)
+plot(seq_along(sp_hclust_order), seq_along(sp_hclust_order), 
+     type = "n", 
+     xaxt = "n", yaxt = "n",bty="n",
+     xlab = "", ylab = "",asp=1)
+image(1:33,1:33,corrmat[ncol(corrmat):1,], add = T, col = hcl.colors(100,"Blue-Red 3"), zlim=c(-1,1))
+axis(2, at = 1:23, labels = common$common_name[sp_hclust_order])
+axis(3, at = 23:1, labels = common$common_name[sp_hclust_order])
+
+## ggplot
+corr_ggdf <- expand.grid(common$common_name[sp_hclust_order], common$common_name[sp_hclust_order])
+for (i in seq_along(corrmat)) {
+  corr_ggdf[i,3] <- corrmat[i]
+}
+
+names(corr_ggdf) <- c("sp1", "sp2", "corr")
+col2 <- colorRampPalette(c("#67001F", "#B2182B", "#D6604D", "#F4A582",
+                           "#FDDBC7", "#FFFFFF", "#D1E5F0", "#92C5DE",
+                           "#4393C3", "#2166AC", "#053061"))
+ggplot(corr_ggdf, aes(sp1,sp2))+
+  geom_tile(aes(fill = corr))+
+    scale_fill_gradientn(limits=c(-1,1),
+                         colours = col2(200))+
+    labs(x='',y='', fill='')+
+    theme(axis.text.y=element_text(hjust = 0.5), 
+          axis.text.x=element_text(angle = 45, hjust = 0),
+          legend.key.height = unit(3, 'lines'))+
+    scale_x_discrete(position = 'top', limits = rev) -> jsdm_corr_plot
+jsdm_corr_plot
+```
+
+### Soil chemistry
+
+We collected soil samples at different locations along the transect. The samples were analyzed for their chemical composition. This included quantification of organic matter (carbon, nitrogen), water content and pH, as well as inorganic elements (Iron, Calcium, Copper, Magnesium, Manganese, Phosporous, Potassium, Zinc). We collected and analyzed 133 soil samples.
+
+```{r}
+soilchem <- read_csv("../Data/soil_chemistry.csv")
+soilchem %>% pivot_longer(cols = where(is.numeric), names_to = "variable", values_to = "value") %>% group_by(variable) %>% summarise(mean = mean(value, na.rm = T), min = min(value), max = max(value), sd = sd(value, na.rm=T))
+```
+
+```{r, fig.cap="Correlation of soil chemistry variables"}
+corrplot(cor(soilchem[,-1], use = "complete.obs"), order = "FPC")
+```
+
+There are strong positive correlations between the content of Mg, Ca, the soil pH and cationic exchange capacity. There also strong positive correlations between the content of C, N, P, and SA. These two groups are negatively correlated to each other. Elements like Zn, K, Cu show no strong association with other variables.
+
+### Beetles
+
+We also collected beetles (Coleoptera) using pit fall traps near each camera-trap location. Each location was sampled 1-3 times.
+
+```{r}
+beet_data <- read.csv("../Data/dung_beetles.csv")
+names(beet_data)
+beet_sp_mat <- beet_data %>% group_by(Plot) %>% summarise(across(6:72, sum)) %>%  column_to_rownames(var = "Plot") 
+beet_sp_mat <- beet_sp_mat[rowSums(beet_sp_mat)>0,]
+beet_sp_mat <- beet_sp_mat[rownames(beet_sp_mat)!="Ms134",]
+mds_beet <- metaMDS(beet_sp_mat)
+plot(mds_beet,  type = 'none', las=1)
+ordiellipse(mds_beet,as.factor(grepl("P",rownames(beet_sp_mat))),draw = "polygon", col = hcl.colors(2))
+# plot(envfit(mds, env_mat[,3]), col = 'darkred')
+text(mds_beet, display = 'species', cex = 0.8)
+# legend("bottomright", legend = c("PILA","Corcovado"),fill = hcl.colors(2))
+```
