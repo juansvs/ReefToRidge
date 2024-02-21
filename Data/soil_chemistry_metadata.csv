@@ -1,0 +1,18 @@
+variable,description
+sample,code of original soil sample collected in the field
+ph,pH of the analyzed sample
+acid,"acidity of the sample, in cmol/L"
+Ca,"Calcium content, in cmol/L"
+Mg,"Magnesium content, in cmol/L"
+K,"Potassium content, in cmol/L"
+CICE,"Capacidad de intercambio cationico efectiva. Measures the soil's ability to retain negative ions, which are available for plants"
+SA,
+P,"Phosporous content, in mg/L"
+Zn,"Zinc content, in mg/L"
+Cu,"Copper content, in mg/L"
+Fe,"Iron content, in mg/L"
+Mn,"Manganese content, in mg/L"
+CE,
+C,"Carbon content, in %"
+N,"Nitrogen content, in %"
+C_N,Carbon:nitrogen proportion

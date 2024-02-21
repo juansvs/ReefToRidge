@@ -1,0 +1,6 @@
+variable,description
+site,code of the site the ibutton was placed at
+t_mean,mean temperature at the site. This is the arithmetic mean of all recorded temperatures
+t_min,minimum temperature registered at the site
+t_max,maximum temperature registered at the site
+t_var,mean of the daily variance in temperature
