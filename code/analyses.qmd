@@ -25,14 +25,18 @@ library(corrplot)
 
 #### Ordination
 
-```{r}
-sp_mat <- DAT %>% group_by(Site, Species) %>% count() %>% pivot_wider(names_from = Species, values_from = n, values_fill = 0) %>% ungroup() %>% select(-1) 
+```{r nmds}
+DAT <- read_csv("../Data/records_wild.csv") %>% rename(species = common_name)
+sp_mat <- DAT %>% group_by(site, species) %>% count() %>% pivot_wider(names_from = species, values_from = n, values_fill = 0) %>% ungroup() %>% select(-1) 
 mds <- metaMDS(sp_mat)
+```
+
+```{r nmds_plot}
 plot(mds,  type = 'none', las=1)
 ordiellipse(mds,env_mat[,3],draw = "polygon", col = hcl.colors(2))
 # plot(envfit(mds, env_mat[,3]), col = 'darkred')
 text(mds, display = 'species', cex = 0.8)
-legend("bottomright", legend = c("PILA","Corcovado"),fill = hcl.colors(2))
+legend("bottomright", legend = c("Grassland","Forest"),fill = hcl.colors(2))
 ```
 
 #### JSDM
@@ -41,33 +45,34 @@ We fit a joint species distribution model to analyze the occupancy probability o
 
 ```{r}
 library(sjSDM)
-DAT <- read_csv("../Data/combined_records.csv")
 occ_data_bin <- DAT %>% 
-  distinct(Site, Species) %>%
+  rename(Species = common_name) %>% 
+  distinct(site, Species) %>%
   mutate(n=1) %>% 
   pivot_wider(names_from = Species, values_from = n, values_fill = 0) %>% 
-  column_to_rownames("Site") %>% 
+  column_to_rownames("site") %>% 
   as.matrix()
-env_mat <- tibble(Site = rownames(occ_data_bin)) %>%
-  left_join(distinct(all_stn_effort, Site,lat,long)) %>% 
-  mutate(area = ifelse(grepl(x = Site, pattern = "PILA"), 1,0)) %>% 
-  column_to_rownames("Site") %>% 
+env_mat <- tibble(site = rownames(occ_data_bin)) %>%
+  left_join(as.data.frame(camvect)) %>% 
+  column_to_rownames("site") %>% 
+  select(easting, northing,LC_1,alt_1,ghm_1,distance) %>% 
+  rename(x = easting, y = northing, landcov = LC_1, alt = alt_1, ghm = ghm_1) %>% 
+  mutate(landcov = case_match(landcov, 12~1,21~0)) %>% 
   as.matrix()
 occ_models <- list()
 # fit a basic model with no biotic interactions or spatial autocorrelation.
-occ_models[["basic"]] <- sjSDM(Y = occ_data_bin, env = linear(data = scale(env_mat), formula = ~area), # scales env. covariates: canopy, dist to road, dist to pa, forest cover (land use), evi
-               se = TRUE, family=binomial("probit"), device = "cpu")
+occ_models[["base"]] <- sjSDM(Y = occ_data_bin, env = linear(data = scale(env_mat), formula = ~landcov+alt+ghm+distance), # scales env. covariates: canopy, dist to road, dist to pa, forest cover (land use), evi
+                               se = TRUE, family=binomial("probit"), device = "cpu")
 ```
 
 ```{r}
-plot(occ_models$basic)
+plot(occ_models$base)
 ```
 
 ```{r}
-XY <- sf::sf_project("EPSG:4326","EPSG:5367",env_mat[,2:1])
-colnames(XY) <- c("x","y")
+XY <- env_mat[,c("x","y")]
 occ_models[["spatial"]] <- sjSDM(Y = occ_data_bin, 
-                                 env = linear(data = scale(env_mat), formula = ~area), # scales env. covariates: canopy, dist to road, dist to pa, forest cover (land use), evi
+                                 env = linear(data = scale(env_mat), formula = ~landcov+alt+ghm+distance), 
                spatial = linear(data = scale(XY), formula = ~0+x:y), 
                se = TRUE, 
                family=binomial("probit"), 
@@ -75,10 +80,15 @@ occ_models[["spatial"]] <- sjSDM(Y = occ_data_bin,
 plot(occ_models$spatial)
 ```
 
-```{r}
+```{r spatial_model_anova}
 spModAOV <- anova(occ_models$spatial)
+```
+
+```{r}
 plot(spModAOV, internal = T)
 ```
+
+This would make it seem like the distribution of species is determined largely through species associations and environmental effects, but not so much spatial location. The factors that determine site composition are also strongly associated to environmental factors and species composition.
 
 ```{r}
 occ_rsquared <- sapply(occ_models, Rsquared)
@@ -87,7 +97,7 @@ cbind(occ_loglik, occ_rsquared)
 ```
 
 ```{r}
-bestmod <- occ_models$basic
+bestmod <- occ_models$base
 bestmod_summary <- summary(bestmod)
 
 bestmodcoefs <- data.frame(coef(bestmod)[[1]][,-1])
@@ -95,16 +105,15 @@ names(bestmodcoefs) <- bestmod$names[-1]
 bestmodcoefs$sp <- bestmod$species
 bestmodcoefs <- pivot_longer(bestmodcoefs, cols = 1, names_to = "coef", values_to = "value")
 # significance
-sigVals <- sigLabel <- data.frame(t(bestmod_summary$P)[,-1])
+sigVals <- data.frame(t(bestmod_summary$P)[,-1])
 names(sigVals) <- names(sigLabel) <- bestmod$names[-1]
-sigLabel[bestmod$weights[[1]][,-1]>0,1] <- "+"
-sigLabel[bestmod$weights[[1]][,-1]<0,1] <- "-"
-sigLabel[sigVals$area>0.05 | is.na(sigVals$area),] <- ""
+sigLabel <- as.data.frame(bestmod$weights[[1]][,-1])  %>% mutate(across(1:4, \(x) ifelse(x>0, "+","-")))
+
 # sigLabel <- replace(sigLabel,bestmod$weights[[1]][,-1]>0,values = "+") %>% 
 #   replace(bestmod$weights[[1]][,-1]<0,values = "-") %>% 
 #   replace(sigLabel>0.05, "")
 sigLabel$sp <- bestmod$species
-sigLabel <- pivot_longer(sigLabel, cols = 1, names_to = "coef", values_to = "text")
+sigLabel <- pivot_longer(sigLabel, cols = 1:4, names_to = "coef", values_to = "text")
 
 # plot
 ggplot(bestmodcoefs, aes(x=coef, y=fct_reorder(sp, value)))+
