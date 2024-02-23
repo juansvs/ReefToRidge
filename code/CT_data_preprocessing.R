@@ -1,5 +1,9 @@
 #' Juan S. Vargas
 #' February 2024
+#'
+#' Run this code to generate a cleaner database from the raw camera-trap data.
+#' The output is a new csv file with only the station, species, and time. In it
+#' we only keep indep events (dt>5 mins) of wild terrestrial vertebrates.
 #' 
 
 # load libraries
