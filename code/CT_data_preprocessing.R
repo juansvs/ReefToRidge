@@ -5,13 +5,30 @@
 # load libraries
 library(tidyverse)
 
-# Read in data
+#### Read in data ####
 data_raw <- read_csv("Data/ct_records.csv",
                      col_types = cols_only(deployment_id = 'c', common_name = 'c', timestamp = col_datetime("%Y-%m-%d %H:%M") ))
 stn_data_raw <- read_csv("Data/ct_deployments.csv", 
                          col_select = c(deployment_id, placename, longitude, latitude,start_date, end_date))
 data_raw
 stn_data_raw
+
+#### check times and dates ####
+# check times
+ggplot(data_raw, aes(hour(timestamp)))+geom_histogram()
+# dates
+ggplot(data_raw, aes(timestamp, deployment_id))+stat_summary(fun.min = min,fun.max = max,geom = "linerange")
+# there is a wrong date, that has year 2035, let's find and correct.
+data_raw %>% slice_max(timestamp,n=10)
+# The problem is three records from station 129, possibly due to a malfunction.
+# The records are of nothing so can be ignored
+filter(data_raw, common_name!="Nothing") %>% 
+  ggplot(aes(timestamp, deployment_id))+stat_summary(fun.min = min,fun.max = max,geom = "linerange")
+# There is still one camera that has a deployment period earlier than all the rest, around march 2019 rather than 2020.
+slice_min(data_raw, timestamp,n=10)
+# The camera is MS#58, also called Ticho-Planes, from the Corcovado data. All
+# the records are consistent, it seems this camera was just out a year before
+# the rest
 
 #### station names ####
 unique(data_raw$deployment_id)
@@ -56,7 +73,7 @@ terr_verts <- c("baird's tapir","cat_domestic","cat_uid",
                 "central_american_agouti","central_american_red_brocket",
                 "collared_peccary","common_opossum", "cottontail_dices",
                 "cow","coyote","crab_eating_raccoon","dog",
-                "geoffroy's_spider_monkey","great_curassow","greater_grison",
+                "great_curassow","greater_grison",
                 "guan_crested","guan_black","horse","people","jaguar","jaguarundi",
                 "margay","nine_banded_armadillo","northern_raccon",
                 "northern_tamandua","ocelot","oncilla","opossum_four_eyed",
@@ -67,7 +84,7 @@ wild_verts <- c("baird's tapir","cat_uid",
                 "central_american_agouti","central_american_red_brocket",
                 "collared_peccary","common_opossum", "cottontail_dices",
                 "coyote","crab_eating_raccoon",
-                "geoffroy's_spider_monkey","great_curassow","greater_grison",
+                "great_curassow","greater_grison",
                 "guan_crested","guan_black","jaguar","jaguarundi",
                 "margay","nine_banded_armadillo","northern_raccon",
                 "northern_tamandua","ocelot","oncilla","opossum_four_eyed",
@@ -87,24 +104,14 @@ data_wild <- arrange(data_wild,deployment_id,common_name,timestamp) %>% group_by
   filter(is.na(tdif) | tdif>duration(5,"mins")) %>% 
   ungroup()
 
-# this reduces to 7953 independent events
+# this reduces to 7953 independent events, of 31 different taxa. This includes
+# unidentified felines (Leopardus sp.), raccoons (Procyon sp.), opossums, and
+# peccaries. We have then 27 different species, 5 birds and 22 mammals
+count(data_wild, common_name) %>% arrange(desc(n)) %>% mutate(logn = log10(n)) %>% view()
 
-#### check times and dates ####
-# check times
-ggplot(data_raw, aes(hour(timestamp)))+geom_histogram()
-# dates
-ggplot(data_raw, aes(timestamp, deployment_id))+stat_summary(fun.min = min,fun.max = max,geom = "linerange")
-# there is a wrong date, that has year 2035, let's find and correct.
-data_raw %>% slice_max(timestamp,n=10)
-# The problem is three records from station 129, possibly due to a malfunction.
-# The records are of nothing so can be ignored
-filter(data_raw, common_name!="Nothing") %>% 
-  ggplot(aes(timestamp, deployment_id))+stat_summary(fun.min = min,fun.max = max,geom = "linerange")
-# There is still one camera that has a deployment period earlier than all the rest, around march 2019 rather than 2020.
-slice_min(data_raw, timestamp,n=10)
-# The camera is MS#58, also called Ticho-Planes, from the Corcovado data. All
-# the records are consistent, it seems this camera was just out a year before
-# the rest
+#### export ####
+select(data_wild, deployment_id, common_name, timestamp) %>% 
+  write_csv("Data/records_wild.csv")
 
 #### OLD CODE ####
 #' This code reads in, cleans and puts all the camera-trap data in a single format.
