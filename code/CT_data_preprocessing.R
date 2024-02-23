@@ -46,11 +46,48 @@ data1 <- mutate(data1, common_name = tolower(common_name)) %>% # first we change
                                  common_name == "marbled_wood_quail"~"wood_quail_marbled",
                                  common_name == "opossum"~"common_opossum",
                                  common_name == "great_tinamou"~"tinamou_great",
+                                 common_name %in% c("human","ranger","tourist","hunter")~"people",
                                  .default = common_name)) 
 
-distinct(select(data1,common_name)) %>% view()
+count(data1,common_name) %>% view()
 
+# list of species to keep for analyses, first is with people and domestic, second without.
+terr_verts <- c("baird's tapir","cat_domestic","cat_uid",
+                "central_american_agouti","central_american_red_brocket",
+                "collared_peccary","common_opossum", "cottontail_dices",
+                "cow","coyote","crab_eating_raccoon","dog",
+                "geoffroy's_spider_monkey","great_curassow","greater_grison",
+                "guan_crested","guan_black","horse","people","jaguar","jaguarundi",
+                "margay","nine_banded_armadillo","northern_raccon",
+                "northern_tamandua","ocelot","oncilla","opossum_four_eyed",
+                "opossum_uid","peccary_uid","puma","raccoon_uid", "spotted_paca",
+                "striped_hog_nosed_skunk","tayra","tinamou_great","tinamou_little",
+                "white_lipped_peccary","white_nosed_coati")
+wild_verts <- c("baird's tapir","cat_uid",
+                "central_american_agouti","central_american_red_brocket",
+                "collared_peccary","common_opossum", "cottontail_dices",
+                "coyote","crab_eating_raccoon",
+                "geoffroy's_spider_monkey","great_curassow","greater_grison",
+                "guan_crested","guan_black","jaguar","jaguarundi",
+                "margay","nine_banded_armadillo","northern_raccon",
+                "northern_tamandua","ocelot","oncilla","opossum_four_eyed",
+                "opossum_uid","peccary_uid","puma","raccoon_uid", "spotted_paca",
+                "striped_hog_nosed_skunk","tayra","tinamou_great","tinamou_little",
+                "white_lipped_peccary","white_nosed_coati")
 
+# Filter data to keep only wild vertebrates
+data_wild <- filter(data1, common_name %in% wild_verts)
+data_wild
+# This gives us a database with 16885 entries.
+
+#### Independent events #### 
+# We need to keep only independent events. We will set a five minute threshold to classify two detections as indep
+data_wild <- arrange(data_wild,deployment_id,common_name,timestamp) %>% group_by(deployment_id, common_name) %>% 
+  mutate(tdif = difftime(lead(timestamp), timestamp, units = "mins")) %>% 
+  filter(is.na(tdif) | tdif>duration(5,"mins")) %>% 
+  ungroup()
+
+# this reduces to 7953 independent events
 
 #### check times and dates ####
 # check times
