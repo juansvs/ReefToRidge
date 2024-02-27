@@ -100,6 +100,9 @@ cbind(occ_loglik, occ_rsquared)
 bestmod <- occ_models$base
 bestmod_summary <- summary(bestmod)
 
+bestmodcoefs <- as.data.frame(t(bestmod_summary$coefs[-1,])) %>% rownames_to_column("sp") %>% 
+  pivot_longer(2:5, names_to = "coef", "value")
+
 sigLabel <- as.data.frame(t((bestmod_summary$P<0.05)*bestmod_summary$coefs)[,-1])%>%   rownames_to_column("sp") %>% 
 mutate(across(2:5, \(x) case_when(x>0~"+",
                              x<0~"-"))) %>% 
@@ -114,7 +117,7 @@ ggplot(bestmodcoefs, aes(x=coef, y=sp))+
   theme(axis.text.x = element_text(angle = 45, size = 9, hjust = 0), 
         # legend.position = 'none',
         axis.title = element_blank())+
-  scale_x_discrete(position = 'top', labels = c("Land cover", "Altitude", "Human pressure", "PA dist"))+
+  scale_x_discrete(position = 'top', labels = c("Altitude", "PA dist", "Human pressure", "Land cover"))+
   geom_text(data=left_join(bestmodcoefs,sigLabel), aes(label=text), vjust=0.5) -> jsdm_coef_plot
 jsdm_coef_plot
 ```
