@@ -136,18 +136,20 @@ for (i in seq_along(sp_hclust_order)) {
   }
 }
 
+colnames(corrmat) <- rownames(corrmat) <- 
+
 # base R plot
 par(mar = c(2,15,10,5), las=2)
 plot(seq_along(sp_hclust_order), seq_along(sp_hclust_order), 
      type = "n", 
      xaxt = "n", yaxt = "n",bty="n",
      xlab = "", ylab = "",asp=1)
-image(1:33,1:33,corrmat[ncol(corrmat):1,], add = T, col = hcl.colors(100,"Blue-Red 3"), zlim=c(-1,1))
-axis(2, at = 1:23, labels = common$common_name[sp_hclust_order])
-axis(3, at = 23:1, labels = common$common_name[sp_hclust_order])
+image(1:31,1:31,corrmat[ncol(corrmat):1,], add = T, col = hcl.colors(100,"Blue-Red 3"), zlim=c(-1,1))
+axis(2, at = 1:31, labels = bestmod$species[sp_hclust_order])
+axis(3, at = 31:1, labels = bestmod$species[sp_hclust_order])
 
 ## ggplot
-corr_ggdf <- expand.grid(common$common_name[sp_hclust_order], common$common_name[sp_hclust_order])
+corr_ggdf <- expand.grid(bestmod$species[sp_hclust_order], bestmod$species[sp_hclust_order])
 for (i in seq_along(corrmat)) {
   corr_ggdf[i,3] <- corrmat[i]
 }
