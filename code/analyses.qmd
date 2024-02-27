@@ -100,30 +100,21 @@ cbind(occ_loglik, occ_rsquared)
 bestmod <- occ_models$base
 bestmod_summary <- summary(bestmod)
 
-bestmodcoefs <- data.frame(coef(bestmod)[[1]][,-1])
-names(bestmodcoefs) <- bestmod$names[-1]
-bestmodcoefs$sp <- bestmod$species
-bestmodcoefs <- pivot_longer(bestmodcoefs, cols = 1, names_to = "coef", values_to = "value")
-# significance
-sigVals <- data.frame(t(bestmod_summary$P)[,-1])
-names(sigVals) <- names(sigLabel) <- bestmod$names[-1]
-sigLabel <- as.data.frame(bestmod$weights[[1]][,-1])  %>% mutate(across(1:4, \(x) ifelse(x>0, "+","-")))
+sigLabel <- as.data.frame(t((bestmod_summary$P<0.05)*bestmod_summary$coefs)[,-1])%>%   rownames_to_column("sp") %>% 
+mutate(across(2:5, \(x) case_when(x>0~"+",
+                             x<0~"-"))) %>% 
+  pivot_longer(cols = 2:5, names_to = "coef", values_to = "text")
 
-# sigLabel <- replace(sigLabel,bestmod$weights[[1]][,-1]>0,values = "+") %>% 
-#   replace(bestmod$weights[[1]][,-1]<0,values = "-") %>% 
-#   replace(sigLabel>0.05, "")
-sigLabel$sp <- bestmod$species
-sigLabel <- pivot_longer(sigLabel, cols = 1:4, names_to = "coef", values_to = "text")
 
 # plot
-ggplot(bestmodcoefs, aes(x=coef, y=fct_reorder(sp, value)))+
+ggplot(bestmodcoefs, aes(x=coef, y=sp))+
   geom_tile(aes(fill = value))+
-  scale_fill_gradient2(limits = c(-3,3))+
-  # theme_void()+
+  scale_fill_gradient2(limits = c(-2.5,2.5))+
+  theme_minimal()+
   theme(axis.text.x = element_text(angle = 45, size = 9, hjust = 0), 
         # legend.position = 'none',
         axis.title = element_blank())+
-  scale_x_discrete(expand = expansion(mult = c(0.2,0.5)), position = 'top', labels = c("Area"))+
+  scale_x_discrete(position = 'top', labels = c("Land cover", "Altitude", "Human pressure", "PA dist"))+
   geom_text(data=left_join(bestmodcoefs,sigLabel), aes(label=text), vjust=0.5) -> jsdm_coef_plot
 jsdm_coef_plot
 ```
