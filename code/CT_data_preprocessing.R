@@ -19,7 +19,7 @@ stn_data_raw
 
 #### check times and dates ####
 # check times
-ggplot(data_raw, aes(hour(timestamp)))+geom_histogram()
+ggplot(data_raw, aes(hour(timestamp)))+geom_histogram(binwidth = 1)
 # dates
 ggplot(data_raw, aes(timestamp, deployment_id))+stat_summary(fun.min = min,fun.max = max,geom = "linerange")
 # there is a wrong date, that has year 2035, let's find and correct.
@@ -28,7 +28,8 @@ data_raw %>% slice_max(timestamp,n=10)
 # The records are of nothing so can be ignored
 filter(data_raw, common_name!="Nothing") %>% 
   ggplot(aes(timestamp, deployment_id))+stat_summary(fun.min = min,fun.max = max,geom = "linerange")
-# There is still one camera that has a deployment period earlier than all the rest, around march 2019 rather than 2020.
+# There is still one camera that has a deployment period earlier than all the
+# rest, around march 2019 rather than 2020.
 slice_min(data_raw, timestamp,n=10)
 # The camera is MS#58, also called Ticho-Planes, from the Corcovado data. All
 # the records are consistent, it seems this camera was just out a year before
@@ -51,6 +52,9 @@ filter(stn_data_raw,deployment_id %in% c("MS#111","MS#175","MS#72"))
 # deployment period of MS#111, I will change the NAs to this station
 data1 <- mutate(data_raw, deployment_id = replace(deployment_id, is.na(deployment_id),"MS#111"))
 which(is.na(data1$deployment_id))
+
+# remove # from codes
+data1 <- mutate(data1, deployment_id = gsub("#","", deployment_id))
 
 #### species names ####
 count(data1, common_name) %>% view()
@@ -99,7 +103,7 @@ wild_verts <- c("baird's tapir","cat_uid",
 # Filter data to keep only wild vertebrates
 data_wild <- filter(data1, common_name %in% wild_verts)
 data_wild
-# This gives us a database with 16885 entries.
+# This gives us a database with 16866 entries.
 
 #### Independent events #### 
 # We need to keep only independent events. We will set a five minute threshold to classify two detections as indep
@@ -108,12 +112,42 @@ data_wild <- arrange(data_wild,deployment_id,common_name,timestamp) %>% group_by
   filter(is.na(tdif) | tdif>duration(5,"mins")) %>% 
   ungroup()
 
-# this reduces to 7953 independent events, of 31 different taxa. This includes
+# this reduces to 7949 independent events, of 31 different taxa. This includes
 # unidentified felines (Leopardus sp.), raccoons (Procyon sp.), opossums, and
 # peccaries. We have then 27 different species, 5 birds and 22 mammals
 count(data_wild, common_name) %>% arrange(desc(n)) %>% mutate(logn = log10(n)) %>% view()
 
-#### export ####
+#### rename and export ####
 select(data_wild, deployment_id, common_name, timestamp) %>% 
+  rename(site = deployment_id) %>% 
   write_csv("Data/records_wild.csv")
+
+#### Variable names across sheets ####
+names(read.csv("Data/ct_deployments.csv"))
+names(read.csv("Data/site_temp.csv"))
+names(read.csv("Data/soil_chemistry.csv"))
+
+# in the chemistry and temp sheets sites are called sites, which is preferable
+# to deployment_id. I will change all to site. Additionally, the codes don't
+# have the '#' as in the ct_depoyments database, and the sites from Corcovado
+# are written as PNCxxx, not MSxxx.
+
+# site names
+soilsites <- unique(read.csv("Data/soil_chemistry.csv")[,1])
+tempsites <- unique(read.csv("Data/site_temp.csv")[,1])
+ctsites <- gsub("#","",read.csv("Data/ct_deployments.csv")[,2])
+
+# which ones are missing?
+soilsites[!soilsites %in% ctsites]
+tempsites[!tempsites %in% ctsites]
+
+# There are 7 temperature sites that are not in the camera-trap sites. MS63, 71,
+# 124, 130, 159, 169, and PBNP1_new. 63, 71, and 124 broke down and have no
+# data.There are more soil chemistry sites that are not in the camera-trap data.
+# For some it's because they have a different code (e.g. PNC instead of MS). I
+# need to find out the identity of the PNC sites.
+
+# The location of the temp loggers and chem sites is not always the same as the
+# camera location. The data for temps and chem doesn't have coordinates, so I
+# need to extract these from somewhere else.
 
