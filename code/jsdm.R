@@ -1,24 +1,26 @@
 library(terra)
 library(sjSDM)
-camvect <- vect("Data/GIS/CT_wcovar.geojson")
+library(tidyverse)
 
-DAT <- read_csv("../Data/records_wild.csv")
-occ_data_bin <- DAT %>% 
-  rename(species = common_name, site = deployment_id) %>%
-  distinct(site, species) %>%
-  mutate(n=1) %>% 
-  pivot_wider(names_from = species, values_from = n, values_fill = 0) %>% 
+camvect <- vect("Data/ct_covars.geojson")
+campts_db <- as.data.frame(camvect) %>% mutate(site = gsub("#", "", deployment_id), days = as.numeric(days))
+
+DAT <- read_csv("Data/records_wild.csv")
+DAT_wcovs <- left_join(DAT, campts_db)
+# create sp matrix
+occ_data_bin <- DAT %>% count(site, common_name) %>% 
+  mutate(n = (n>0)) %>% 
+  pivot_wider(names_from = common_name, values_from = n, values_fill = 0) %>% 
+  column_to_rownames("site") %>% 
+  as.matrix()
+# create env matrix
+env_mat <- DAT %>% distinct(site) %>% left_join(campts_db) %>% 
+  select(site, easting, northing, ghm1, lc1,alt1, evi_mean1, lfdistance, distance) %>% 
+  rename(x = easting, y = northing, landcov = lc1, alt = alt1, ghm = ghm1, pa_dist = distance, lgfor_dist = lfdistance) %>% 
   column_to_rownames("site") %>% 
   as.matrix()
 
 
-env_mat <- tibble(site = rownames(occ_data_bin)) %>%
-  left_join(as.data.frame(camvect)) %>% 
-  column_to_rownames("site") %>% 
-  select(easting, northing,LC_1,alt_1,ghm_1,distance) %>% 
-  rename(x = easting, y = northing, landcov = LC_1, alt = alt_1, ghm = ghm_1) %>% 
-  mutate(landcov = case_match(landcov, 12~1,21~0)) %>% # 1 is forest, 0 is grassland
-  as.matrix()
 occ_models <- list()
 
 # fit a basic model with no biotic interactions or spatial autocorrelation.
@@ -32,10 +34,25 @@ occ_models[["spatlin"]] <- sjSDM(Y = occ_data_bin, env = linear(data = scale(env
                                 spatial = linear(env_mat, ~0+poly(x,y,degree=2)),
                                 se = TRUE, family=binomial("probit"), device = "cpu")
 
-sapply(occ_models, logLik)
-# The highest log-likelihood is obtained with the base model, which has no spatial component.
+anovas <- lapply(occ_models, anova)
+# The ANOVA table for the models show that, for the base model, the abiotic
+# component has higher deviance than the biotic component, explaining 18% of the
+# explained variance, while biotic associations explain 12%. The full variance
+# explained is the sum of the two, 33%.
+plot(anovas[[1]])
+# The highest log-likelihood is obtained with the base model, which has no
+# spatial component.
 plot(occ_models$base)
 # This model clearly shows the influence of altitude, species like tinamous,
 # tamanduas, armadillos, curassows, raccoons, and agoutis were associated with
 # lowlands, while oncillas, jaguars, guans, and brocket were associated with
 # highlands.
+
+
+
+## Species correlations
+spcor <- getCor(occ_models[[1]])
+image(spcor, asp=1, col = hcl.colors(12, 'Blue-Red2', rev=T), zlim = c(-1,1), 
+      bty='n',xaxt='n',yaxt='n') # remove box and axes
+mtext(occ_models[[1]]$species, 1,at = (0:30)/30, adj = 0, srt = )
+
