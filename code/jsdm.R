@@ -49,10 +49,87 @@ plot(occ_models$base)
 # highlands.
 
 
-
 ## Species correlations
 spcor <- getCor(occ_models[[1]])
 image(spcor, asp=1, col = hcl.colors(12, 'Blue-Red2', rev=T), zlim = c(-1,1), 
       bty='n',xaxt='n',yaxt='n') # remove box and axes
 mtext(occ_models[[1]]$species, 1,at = (0:30)/30, adj = 0, srt = )
 
+## Plot
+bestmod <- occ_models$base
+bestmod_summary <- summary(bestmod)
+
+bestmodcoefs <- as.data.frame(t(bestmod_summary$coefs[-1,])) %>% rownames_to_column("sp") %>% 
+  pivot_longer(2:4, names_to = "coef", values_to = "value")
+
+sigLabel <- as.data.frame(t((bestmod_summary$P<0.05)*bestmod_summary$coefs)[,-1])%>%   rownames_to_column("sp") %>% 
+  mutate(across(2:4, \(x) case_when(x>0~"+",
+                                    x<0~"-"))) %>% 
+  pivot_longer(cols = 2:4, names_to = "coef", values_to = "text")
+
+
+# plot
+col2 <- colorRampPalette(c("#67001F", "#B2182B", "#D6604D", "#F4A582",
+                           "#FDDBC7", "#FFFFFF", "#D1E5F0", "#92C5DE",
+                           "#4393C3", "#2166AC", "#053061"))
+
+# arrange species by their dissimilarity for correlation matrix
+sp_hclust_order <- hclust(dist(cov2cor(getCov(bestmod))))$order
+
+ggplot(bestmodcoefs, aes(x=coef, y=sp))+
+  geom_tile(aes(fill = value), show.legend = F)+
+  scale_fill_gradientn(limits=c(-2,2),
+                       colours = col2(200))+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0), 
+        # legend.position = 'none',
+        axis.title = element_blank())+
+  scale_x_discrete(position = 'top', labels = c("Altitude", "Human pressure", "Land cover"))+
+  geom_text(data=left_join(bestmodcoefs,sigLabel), aes(label=text), vjust=0.5) -> jsdm_coef_plot
+jsdm_coef_plot
+
+
+# import common names database
+common <- read.csv("Data/species_commonName.csv")
+common_hclust <- data.frame(common, order = sp_hclust_order)
+
+corrmat <- matrix(nrow = length(sp_hclust_order), ncol = length(sp_hclust_order))
+for (i in seq_along(sp_hclust_order)) {
+  for (j in seq_along(sp_hclust_order)) {
+    corrmat[i,j] <- cov2cor(getCov(bestmod))[sp_hclust_order[i],sp_hclust_order[j]]
+  }
+}
+
+# colnames(corrmat) <- rownames(corrmat) <- 
+  
+  # base R plot
+  par(mar = c(2,15,10,5), las=2)
+plot(seq_along(sp_hclust_order), seq_along(sp_hclust_order), 
+     type = "n", 
+     xaxt = "n", yaxt = "n",bty="n",
+     xlab = "", ylab = "",asp=1)
+image(1:31,1:31,corrmat[ncol(corrmat):1,], add = T, col = hcl.colors(100,"Blue-Red 3", rev=T), zlim=c(-1,1))
+axis(2, at = 1:31, labels = bestmod$species[sp_hclust_order])
+axis(3, at = 31:1, labels = bestmod$species[sp_hclust_order])
+
+## ggplot
+corr_ggdf <- expand.grid(bestmod$species[sp_hclust_order], bestmod$species[sp_hclust_order])
+for (i in seq_along(corrmat)) {
+  corr_ggdf[i,3] <- corrmat[i]
+}
+
+names(corr_ggdf) <- c("sp1", "sp2", "corr")
+ggplot(corr_ggdf, aes(sp1,sp2))+
+  geom_tile(aes(fill = corr))+
+  scale_fill_gradientn(limits=c(-1,1),
+                       colours = col2(200))+
+  labs(x='',y='', fill='')+
+  theme(axis.text.y=element_text(hjust = 0.5), 
+        axis.text.x=element_text(angle = 45, hjust = 0),
+        legend.key.height = unit(3, 'lines'))+
+  scale_x_discrete(position = 'top', limits = rev) -> jsdm_corr_plot
+jsdm_corr_plot+theme(aspect.ratio = 1)
+
+
+cowplot::plot_grid(jsdm_coef_plot, jsdm_corr_plot, align = 'h', rel_widths = c(1,3))
+# need to check species name order
