@@ -17,7 +17,7 @@ DAT_wcovs <- left_join(DAT, campts_db)
 # create sp matrix
 occ_data_bin <- DAT %>% count(site, common_name) %>% 
   filter(!grepl("uid",common_name)) %>% # remove 'uid' species (felids, opossums, peccaries, raccoons)
-  mutate(n = (n>0)) %>% 
+  # mutate(n = (n>0)) %>% 
   pivot_wider(names_from = common_name, values_from = n, values_fill = 0) %>% 
   column_to_rownames("site") %>% 
   as.matrix()
@@ -61,43 +61,63 @@ ggobj+theme_classic(base_size = 16)
 # highlands.
 
 
-#### Beetle models ####
-DATb <- read.csv("Data/dung_beetles_prc.csv")
-DATb_wcovs <- inner_join(DATb, campts_db, by = join_by("Plot"=="site"))
+#### Beetles ####
+# probably need to remove rare species that appeared in a single site.
+DATb <- read.csv("Data/dung_beetles_prc.csv") %>% 
+  # join traps from same station
+  summarise(.by = Plot, across(where(is.numeric), sum)) %>% 
+  inner_join(select(campts_db, site), by = join_by("Plot"=="site"))
 # create sp matrix
-occ_data_bin <- DAT %>% count(site, common_name) %>% 
-  mutate(n = (n>0)) %>% 
-  pivot_wider(names_from = common_name, values_from = n, values_fill = 0) %>% 
-  column_to_rownames("site") %>% 
+occ_data_binb <- DATb %>% 
+  column_to_rownames("Plot") %>% 
+  select(where(\(x) sum(x)>0)) %>% 
   as.matrix()
 # create env matrix
-env_mat <- DAT %>% distinct(site) %>% left_join(campts_db) %>% 
-  select(site, easting, northing, ghm1, lc1,alt1, evi_mean1, lfdistance, distance) %>% 
+env_matb <- DATb %>% left_join(campts_db, by = join_by("Plot"=="site")) %>% 
+  select(Plot, easting, northing, ghm1, lc1,alt1, evi_mean1, lfdistance, distance) %>% 
   rename(x = easting, y = northing, landcov = lc1, alt = alt1, ghm = ghm1, pa_dist = distance, lgfor_dist = lfdistance) %>% 
   mutate(landcov = ifelse(landcov==12,1,0)) %>% 
-  column_to_rownames("site") %>% 
+  column_to_rownames("Plot") %>% 
   as.matrix()
 
-occ_models <- list()
+occ_modelsb <- list()
 
 # fit a basic model with no biotic interactions or spatial autocorrelation.
-occ_models[["base"]] <- sjSDM(Y = occ_data_bin, env = linear(data = scale(env_mat), formula = ~landcov+alt+ghm), # scales env. covariates: land cover (forest/grass), altitude, ghm, dist to pa
+occ_modelsb[["base"]] <- sjSDM(Y = occ_data_binb, env = linear(data = scale(env_matb), formula = ~landcov+alt+ghm), # scales env. covariates: land cover (forest/grass), altitude, ghm, dist to pa
                               se = TRUE, family=binomial("probit"), device = "cpu")
-SPeigen <- generateSpatialEV(env_mat[,c(1,2)])
-occ_models[["spatEV"]] <- sjSDM(Y = occ_data_bin, env = linear(data = scale(env_mat), formula = ~landcov+alt+ghm), # scales env. covariates: land cover (forest/grass), altitude, ghm, dist to pa
-                                spatial = linear(SPeigen, ~0+.),
+SPeigenb <- generateSpatialEV(env_matb[,c(1,2)])
+occ_modelsb[["spatEV"]] <- sjSDM(Y = occ_data_binb, env = linear(data = scale(env_matb), formula = ~landcov+alt+ghm), # scales env. covariates: land cover (forest/grass), altitude, ghm, dist to pa
+                                spatial = linear(SPeigenb, ~0+.),
                                 se = TRUE, family=binomial("probit"), device = "cpu")
-occ_models[["spatlin"]] <- sjSDM(Y = occ_data_bin, env = linear(data = scale(env_mat), formula = ~landcov+alt+ghm), # scales env. covariates: land cover (forest/grass), altitude, ghm, dist to pa
-                                 spatial = linear(env_mat, ~0+poly(x,y,degree=2)),
+occ_modelsb[["spatlin"]] <- sjSDM(Y = occ_data_binb, env = linear(data = scale(env_matb), formula = ~landcov+alt+ghm), # scales env. covariates: land cover (forest/grass), altitude, ghm, dist to pa
+                                 spatial = linear(env_matb, ~0+poly(x,y,degree=2)),
                                  se = TRUE, family=binomial("probit"), device = "cpu")
 
-anovas <- lapply(occ_models, anova)
-anovas
-# The ANOVA table for the models show that, for the base model, the abiotic
-# component has higher deviance than the biotic component, explaining 18% of the
-# explained variance, while biotic associations explain 12%. The full variance
-# explained is the sum of the two, 33%.
+anovasb <- lapply(occ_modelsb, anova)
+anovasb
 
+sp_hclust_order <- hclust(dist(cov2cor(getCov(occ_modelsb$base))))$order
+corrmat <- matrix(nrow = length(sp_hclust_order), ncol = length(sp_hclust_order))
+for (i in seq_along(sp_hclust_order)) {
+  for (j in seq_along(sp_hclust_order)) {
+    corrmat[i,j] <- cov2cor(getCov(occ_modelsb$base))[sp_hclust_order[i],sp_hclust_order[j]]
+  }
+}
+corr_ggdf <- expand.grid(occ_modelsb$base$species[sp_hclust_order], occ_modelsb$base$species[sp_hclust_order])
+for (i in seq_along(corrmat)) {
+  corr_ggdf[i,3] <- corrmat[i]
+}
+
+names(corr_ggdf) <- c("sp1", "sp2", "corr")
+ggplot(corr_ggdf, aes(sp1,sp2))+
+  geom_tile(aes(fill = corr))+
+  scale_fill_gradientn(limits=c(-1,1),
+                       colours = col2(200))+
+  labs(x='',y='', fill='')+
+  theme(axis.text.y=element_text(hjust = 0.5), 
+        axis.text.x=element_text(angle = 45, hjust = 0),
+        legend.key.height = unit(3, 'lines'))+
+  scale_x_discrete(position = 'top', limits = rev)
 
 #### Plots ####
 # plot
@@ -137,12 +157,12 @@ jsdm_coef_plot
 # common <- read.csv("Data/species_commonName.csv")
 # common_hclust <- data.frame(common, order = sp_hclust_order)
 
-# corrmat <- matrix(nrow = length(sp_hclust_order), ncol = length(sp_hclust_order))
-# for (i in seq_along(sp_hclust_order)) {
-#   for (j in seq_along(sp_hclust_order)) {
-#     corrmat[i,j] <- cov2cor(getCov(bestmod))[sp_hclust_order[i],sp_hclust_order[j]]
-#   }
-# }
+corrmat <- matrix(nrow = length(sp_hclust_order), ncol = length(sp_hclust_order))
+for (i in seq_along(sp_hclust_order)) {
+  for (j in seq_along(sp_hclust_order)) {
+    corrmat[i,j] <- cov2cor(getCov(bestmod))[sp_hclust_order[i],sp_hclust_order[j]]
+  }
+}
 
 # colnames(corrmat) <- rownames(corrmat) <- 
   
