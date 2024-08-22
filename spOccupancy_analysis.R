@@ -8,6 +8,8 @@ library(terra)
 # occasions at each site. We exclude the sites with less than 4 weeks of
 # sampling, and divide the detections into monthly counts.
 
+#### CT data ####
+
 camvect <- vect("Data/ct_covars.geojson")
 campts_db <- as.data.frame(camvect) %>% mutate(site = gsub("#", "", deployment_id), days = as.numeric(days))
 
@@ -132,7 +134,7 @@ plot(lfmod3, 'beta', density = F) # plots look good
 ppc.out3 <- ppcOcc(lfmod3, fit.stat = 'freeman-tukey', group = 1)
 summary(ppc.out3)
 
-# Plot
+#### Plots ####
 betas <- lfmod$beta.samples
 data.frame(coef = colnames(betas),
            mean = colMeans(betas),
@@ -147,3 +149,32 @@ data.frame(coef = colnames(betas),
   geom_point()+
   facet_wrap(~parameter)
 
+#### Pitfall data ####
+DATb <- read.csv("Data/dung_beetles_prc.csv") %>% 
+  # join traps from same station
+  summarise(.by = Plot, across(where(is.numeric), sum)) %>% 
+  inner_join(select(campts_db, site), by = join_by("Plot"=="site"))
+# create sp matrix
+beet_sp_mat <- DATb %>% 
+  column_to_rownames("Plot") %>% 
+  mutate(across(1:ncol(.), \(x) as.numeric(x>0))) %>% # make binary
+  select(where(\(x) sum(x)>5)) %>% # only species present at multiple (>5) sites
+  filter(rowSums(.)>0) %>% # 
+  as.matrix()
+# create env matrix
+beet_covs <- tibble(site = rownames(beet_sp_mat)) %>% left_join(campts_db) %>% 
+  select(site, easting, northing, ghm1, lc1,alt1, evi_mean1, lfdistance, distance) %>% 
+  rename(x = easting, y = northing, forest = lc1, alt = alt1, ghm = ghm1, pa_dist = distance, lgfor_dist = lfdistance) %>% 
+  mutate(landcov = ifelse(forest==12,1,0)) %>% 
+  column_to_rownames("site") %>% 
+  as.matrix()
+
+beet.data <- list(y = beet_sp_mat, 
+                  covs = beet_covs[,c("forest", "alt", "ghm", "pa_dist", "lgfor_dist")], 
+                  coords = beet_covs[,c("x", "y")])
+# run model
+beetjsdm <- lfJSDM(formula = ~scale(forest)+scale(alt)+scale(ghm),
+                   data = beet.data, 
+                   n.samples = 1000, n.thin = 2, n.chains = 3, n.factors = 4)
+
+# diagnostics
