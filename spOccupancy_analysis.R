@@ -62,9 +62,6 @@ inits.list <- list(beta.comm = 0, alpha.comm = 0, # Community-level occurrence (
                    z = apply(mody, c(1,2), max, na.rm = T)
 )
 
-# model formulas
-occform <- ~1+scale(forest)+scale(alt)+scale(ghm)# formula for the abundance portion of the model
-detform <- ~1 
 
 # Run model
 sfmod <- sfMsPGOcc(occ.formula = ~scale(forest)+scale(alt)+scale(ghm), 
@@ -159,8 +156,9 @@ beet_sp_mat <- DATb %>%
   column_to_rownames("Plot") %>% 
   mutate(across(1:ncol(.), \(x) as.numeric(x>0))) %>% # make binary
   select(where(\(x) sum(x)>5)) %>% # only species present at multiple (>5) sites
-  filter(rowSums(.)>0) %>% # 
-  as.matrix()
+  filter(rowSums(.)>0) %>% # filter empty sites
+  as.matrix() %>% 
+  t() # transpose
 # create env matrix
 beet_covs <- tibble(site = rownames(beet_sp_mat)) %>% left_join(campts_db) %>% 
   select(site, easting, northing, ghm1, lc1,alt1, evi_mean1, lfdistance, distance) %>% 
@@ -178,3 +176,17 @@ beetjsdm <- lfJSDM(formula = ~scale(forest)+scale(alt)+scale(ghm),
                    n.samples = 1000, n.thin = 2, n.chains = 3, n.factors = 4)
 
 # diagnostics
+#### Plots ####
+beetbetas <- beetjsdm$beta.samples
+data.frame(coef = colnames(beetbetas),
+           mean = colMeans(beetbetas),
+           lq = apply(beetbetas,2,quantile, prob = 0.025),
+           uq = apply(beetbetas,2,quantile, prob = 0.975)
+) %>% separate_wider_delim(coef, "-", names = c("parameter", "species")) %>% 
+  filter(parameter!="(Intercept)") %>% 
+  mutate(parameter = gsub("scale(|)", "", parameter)) %>% 
+  ggplot(aes(y = species, x = mean))+
+  geom_vline(xintercept = 0, linetype=2)+
+  geom_linerange(aes(xmin = lq, xmax = uq))+
+  geom_point()+
+  facet_wrap(~parameter)

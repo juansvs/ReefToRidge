@@ -27,7 +27,9 @@ library(corrplot)
 
 ```{r nmds}
 DAT <- read_csv("../Data/records_wild.csv") %>% rename(species = common_name)
-sp_mat <- DAT %>% group_by(site, species) %>% count() %>% pivot_wider(names_from = species, values_from = n, values_fill = 0) %>% ungroup() %>% select(-1) 
+sp_mat <- DAT %>% count(site, species) %>% 
+  pivot_wider(names_from = species, values_from = n, values_fill = 0) %>% 
+  select(-1) 
 mds <- metaMDS(sp_mat)
 ```
 
@@ -42,28 +44,6 @@ legend("bottomright", legend = c("Grassland","Forest"),fill = hcl.colors(2))
 #### JSDM
 
 We fit a joint species distribution model to analyze the occupancy probability of different species, and how the expected occupancy is affected by environmental covariates such as land cover and connectivity.
-
-```{r}
-library(sjSDM)
-occ_data_bin <- DAT %>% 
-  rename(Species = common_name) %>% 
-  distinct(site, Species) %>%
-  mutate(n=1) %>% 
-  pivot_wider(names_from = Species, values_from = n, values_fill = 0) %>% 
-  column_to_rownames("site") %>% 
-  as.matrix()
-env_mat <- tibble(site = rownames(occ_data_bin)) %>%
-  left_join(as.data.frame(camvect)) %>% 
-  column_to_rownames("site") %>% 
-  select(easting, northing,LC_1,alt_1,ghm_1,distance) %>% 
-  rename(x = easting, y = northing, landcov = LC_1, alt = alt_1, ghm = ghm_1) %>% 
-  mutate(landcov = case_match(landcov, 12~1,21~0)) %>% 
-  as.matrix()
-occ_models <- list()
-# fit a basic model with no biotic interactions or spatial autocorrelation.
-occ_models[["base"]] <- sjSDM(Y = occ_data_bin, env = linear(data = scale(env_mat), formula = ~landcov+alt+ghm+distance), # scales env. covariates: canopy, dist to road, dist to pa, forest cover (land use), evi
-                               se = TRUE, family=binomial("probit"), device = "cpu")
-```
 
 ```{r}
 plot(occ_models$base)
@@ -179,11 +159,23 @@ soilchem <- read_csv("../Data/soil_chemistry.csv")
 soilchem %>% pivot_longer(cols = where(is.numeric), names_to = "variable", values_to = "value") %>% group_by(variable) %>% summarise(mean = mean(value, na.rm = T), min = min(value), max = max(value), sd = sd(value, na.rm=T))
 ```
 
+#### Variable Correlation
+
 ```{r, fig.cap="Correlation of soil chemistry variables"}
 corrplot(cor(soilchem[,-1], use = "complete.obs"), order = "FPC")
 ```
 
 There are strong positive correlations between the content of Mg, Ca, the soil pH and cationic exchange capacity. There also strong positive correlations between the content of C, N, P, and SA. These two groups are negatively correlated to each other. Elements like Zn, K, Cu show no strong association with other variables.
+
+#### PCA
+
+Since there are many variables it makes sense to summarize them using principal components. We scale since the variables vary orders of magnitude. We see, however, that the data is very heterogeneous, and cannot be summarized neatly in a few components.
+
+```{r, echo=FALSE}
+par(mfrow = c(1,2))
+biplot(princomp(scale(soilchem[complete.cases(soilchem),-1])))
+screeplot(princomp(scale(soilchem[complete.cases(soilchem),-1])), main="")
+```
 
 ### Beetles
 
@@ -197,8 +189,6 @@ beet_sp_mat <- beet_sp_mat[rowSums(beet_sp_mat)>0,]
 beet_sp_mat <- beet_sp_mat[rownames(beet_sp_mat)!="Ms134",]
 mds_beet <- metaMDS(beet_sp_mat)
 plot(mds_beet,  type = 'none', las=1)
-ordiellipse(mds_beet,as.factor(grepl("P",rownames(beet_sp_mat))),draw = "polygon", col = hcl.colors(2))
-# plot(envfit(mds, env_mat[,3]), col = 'darkred')
-text(mds_beet, display = 'species', cex = 0.8)
-# legend("bottomright", legend = c("PILA","Corcovado"),fill = hcl.colors(2))
+plot(envfit(mds, env_mat[,3:6]), col = 'darkred')
+text(mds_beet,  cex = 0.8)
 ```
