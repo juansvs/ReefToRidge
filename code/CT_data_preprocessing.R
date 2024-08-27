@@ -88,7 +88,7 @@ terr_verts <- c("baird's tapir","cat_domestic","cat_uid",
                 "opossum_uid","peccary_uid","puma","raccoon_uid", "spotted_paca",
                 "striped_hog_nosed_skunk","tayra","tinamou_great","tinamou_little",
                 "white_lipped_peccary","white_nosed_coati")
-wild_verts <- c("baird's tapir","cat_uid",
+wild_verts <- c("baird's_tapir","cat_uid",
                 "central_american_agouti","central_american_red_brocket",
                 "collared_peccary","common_opossum", "cottontail_dices",
                 "coyote","crab_eating_raccoon",
@@ -103,7 +103,7 @@ wild_verts <- c("baird's tapir","cat_uid",
 # Filter data to keep only wild vertebrates
 data_wild <- filter(data1, common_name %in% wild_verts)
 data_wild
-# This gives us a database with 16866 entries.
+# This gives us a database with 17172 entries.
 
 #### Independent events #### 
 # We need to keep only independent events. We will set a five minute threshold to classify two detections as indep
@@ -112,9 +112,9 @@ data_wild <- arrange(data_wild,deployment_id,common_name,timestamp) %>% group_by
   filter(is.na(tdif) | tdif>duration(5,"mins")) %>% 
   ungroup()
 
-# this reduces to 7949 independent events, of 31 different taxa. This includes
+# this reduces to 8074 independent events, of 32 different taxa. This includes
 # unidentified felines (Leopardus sp.), raccoons (Procyon sp.), opossums, and
-# peccaries. We have then 27 different species, 5 birds and 22 mammals
+# peccaries. We have then 28 different species, 5 birds and 23 mammals
 count(data_wild, common_name) %>% arrange(desc(n)) %>% mutate(logn = log10(n)) %>% view()
 
 #### rename and export ####
