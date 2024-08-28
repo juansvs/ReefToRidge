@@ -99,7 +99,7 @@ waicOcc(basemod)
 # diagnostics
 ppc.out <- ppcOcc(lfmod, fit.stat = 'freeman-tukey', group = 1)
 summary(ppc.out)
-# The model's Bayesian p value is 0.2364, so not terrible, but rather low (0.5
+# The model's Bayesian p value is 0.244, so not terrible, but rather low (0.5
 # is good, <0.1 or >0.9 is poor). The fit is quite poor for agoutis, collared
 # peccaries, rabbits, curassows, pumas, pacas, and tayras. We can try to fit a
 # different model with other occ or det covariates.
@@ -148,8 +148,9 @@ data.frame(coef = colnames(betas),
 
 #### Pitfall data ####
 DATb <- read.csv("Data/dung_beetles_prc.csv") %>% 
+  select(-Date) %>% 
   # join traps from same station
-  summarise(.by = Plot, across(where(is.numeric), sum)) %>% 
+  summarise(.by = Plot, across(where(is.numeric), sum)) %>%
   inner_join(select(campts_db, site), by = join_by("Plot"=="site"))
 # create sp matrix
 beet_sp_mat <- DATb %>% 
@@ -173,6 +174,54 @@ beet.data <- list(y = beet_sp_mat,
 # run model
 beetjsdm <- lfJSDM(formula = ~scale(forest)+scale(alt)+scale(ghm),
                    data = beet.data, 
+                   n.samples = 1000, n.thin = 2, n.chains = 3, n.factors = 4)
+# occupancy model
+beet_sp_mat <- read.csv("Data/dung_beetles_prc.csv") %>% 
+  filter(Bait !="") %>% # remove stations with no bait info
+  select(-c(Date,Plot)) %>% 
+  inner_join(select(campts_db, site)) %>% 
+  mutate(across(where(is.numeric), \(x) as.numeric(x>0))) %>% # make binary
+  pivot_longer(where(is.numeric), names_to = "sp", values_to = "pres") %>% 
+  filter(sum(pres)>0, .by = site) %>% # filter empty sites
+  filter(sum(pres)>5, .by = sp) %>% # only species present at multiple (>5) sites
+  complete(nesting(site,Bait), sp, fill = list(pres = 0)) %>% 
+  complete(site,Bait,sp) %>% 
+  arrange(Bait,site,sp)
+nsp <- length(unique(beet_sp_mat$sp))
+nst <- length(unique(beet_sp_mat$site))
+nocc <- length(unique(beet_sp_mat$Bait))
+beetmody <- array(data = beet_sp_mat$pres, dim = c(nsp, nst, nocc),
+              dimnames = list(species = unique(beet_sp_mat$sp), 
+                              sites = unique(beet_sp_mat$site),
+                              bait = unique(beet_sp_mat$Bait)))
+
+# create env matrix
+beet_covs <- tibble(site = dimnames(beetmody)[[2]]) %>% left_join(campts_db) %>% 
+  select(site, easting, northing, ghm1, lc1,alt1, evi_mean1, lfdistance, distance) %>% 
+  rename(x = easting, y = northing, forest = lc1, alt = alt1, ghm = ghm1, pa_dist = distance, lgfor_dist = lfdistance) %>% 
+  mutate(landcov = ifelse(forest==12,1,0)) %>% 
+  column_to_rownames("site") %>% 
+  as.matrix()
+baitcov <- read.csv("Data/dung_beetles_prc.csv") %>% 
+  filter(Bait !="") %>% # remove stations with no bait info
+  select(-c(Date,Plot)) %>% 
+  inner_join(select(campts_db, site)) %>% 
+  mutate(across(where(is.numeric), \(x) as.numeric(x>0))) %>% # make binary
+  pivot_longer(where(is.numeric), names_to = "sp", values_to = "pres") %>% 
+  filter(sum(pres)>0, .by = site) %>% # filter empty sites
+  filter(sum(pres)>5, .by = sp) %>% # only species present at multiple (>5) sites
+  distinct(site,Bait) %>% 
+  pivot_wider(values_from = Bait, names_from = Bait) %>% 
+  arrange(site)
+
+beet.data.occ <- list(y = beetmody, 
+                  occ.covs = beet_covs[,c("forest", "alt", "ghm", "pa_dist", "lgfor_dist")], 
+                  det.covs = list(bait = baitcov),
+                  coords = beet_covs[,c("x", "y")])
+
+lfmodbeet <- lfMsPGOcc(occ.formula = ~scale(forest)+scale(alt)+scale(ghm),
+                       det.formula = ~1,
+                   data = beet.data.occ, 
                    n.samples = 1000, n.thin = 2, n.chains = 3, n.factors = 4)
 
 # diagnostics
