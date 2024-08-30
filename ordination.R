@@ -12,8 +12,8 @@ sp_mat <- DAT %>% count(site, species) %>%
   column_to_rownames("site") 
 # create env matrix
 env_mat <- tibble(site = rownames(sp_mat)) %>% 
-  left_join(select(campts_db,site, lfdistance, ghm1, alt1, evi_mean1, temp_mean1, area, cnpmean)) %>% 
-  rename(fdist = lfdistance, ghm = ghm1, alt = alt1, evi = evi_mean1, temp = temp_mean1, cnpy = cnpmean) %>% 
+  left_join(select(campts_db,site, lfdistance, ghm1, alt1, evi_mean1, temp_mean1, area)) %>% 
+  rename(fdist = lfdistance, ghm = ghm1, alt = alt1, evi = evi_mean1, temp = temp_mean1) %>% 
   column_to_rownames("site")
 
 # Ordination
@@ -21,6 +21,11 @@ mds <- metaMDS(sp_mat, trymax = 40)
 
 # fit environmental variables
 ordi_covar <- envfit(mds, env_mat)
+ordi_covar
+
+# see if there are significant differences across areas using ANOSIM
+vertanosim <- anosim(sp_mat, env_mat$area)
+summary(vertanosim)
 # plot the two together, with ellipses for sites near and far (>1000m) from
 # large forest patches
 ordiplot(mds, type="n")
@@ -53,6 +58,9 @@ env_mat_beet <- tibble(site = rownames(occ_data_binb)) %>% left_join(campts_db) 
 # Ordination
 mds_beet <- metaMDS(sp_mat_beet)
 
+# ANoSIM
+beetanosim <- anosim(sp_mat_beet, env_mat_beet$area)
+beetanosim
 # fit environmental variables
 ordi_covar_beet <- envfit(mds_beet, env_mat_beet)
 # plot the two together, with ellipses for sites near and far (>1000m) from
