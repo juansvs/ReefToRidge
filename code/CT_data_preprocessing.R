@@ -86,7 +86,7 @@ terr_verts <- c("baird's tapir","cat_domestic","cat_uid",
                 "margay","nine_banded_armadillo","northern_raccon",
                 "northern_tamandua","ocelot","oncilla","opossum_four_eyed",
                 "opossum_uid","peccary_uid","puma","raccoon_uid", "spotted_paca",
-                "striped_hog_nosed_skunk","tayra","tinamou_great","tinamou_little",
+                "striped_hog_nosed_skunk","tayra","tinamou_highland", "tinamou_great","tinamou_little",
                 "white_lipped_peccary","white_nosed_coati")
 wild_verts <- c("baird's_tapir","cat_uid",
                 "central_american_agouti","central_american_red_brocket",
@@ -97,7 +97,7 @@ wild_verts <- c("baird's_tapir","cat_uid",
                 "margay","nine_banded_armadillo","northern_raccon",
                 "northern_tamandua","ocelot","oncilla","opossum_four_eyed",
                 "opossum_uid","peccary_uid","puma","raccoon_uid", "spotted_paca",
-                "striped_hog_nosed_skunk","tayra","tinamou_great","tinamou_little",
+                "striped_hog_nosed_skunk","tayra","tinamou_highland","tinamou_great","tinamou_little",
                 "white_lipped_peccary","white_nosed_coati")
 
 # Filter data to keep only wild vertebrates
