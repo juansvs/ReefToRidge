@@ -7,12 +7,13 @@ library(soundecology)
 # library(kableExtra)
 library(dplyr)
 # library(pbapply)
-library(ggplot2)
+# library(ggplot2)
 library(stringr)
 # library(foreach)
 # library(doParallel)
 library(progress)
-library(doSNOW)
+library(doParallel)
+library(googledrive)
 
 # Variables
 
@@ -30,7 +31,8 @@ freq_step <- 1000
 # Lower freq for high pass filter
 lowfreq <- 200
 # Number of cores to make parallel processing
-numCores <- parallel::detectCores(logical = F)-1
+# numCores <- parallel::detectCores(logical = F)-1
+numCores <- length(future::availableWorkers())
 
 #--------------------Read files-------------------------------------
 # site <- "MySite"
@@ -39,6 +41,10 @@ numCores <- parallel::detectCores(logical = F)-1
 #                      full.names = T,
 #                      include.dirs = T,
 #                      recursive = T)
+filedb <- read.csv("Data/drive_audio_files.csv")
+
+#-------------Google drive------------------
+drive_auth("juans.vs@gmail.com")
 
 # -------------------------Define functions---------------------------
 filter_fun <- function(audio,
@@ -125,20 +131,24 @@ calc_f <- function(x){
 # registerDoParallel(numCores)
 
 cl <- makeCluster(numCores)
-registerDoSNOW(cl)
+registerDoParallel(cl)
 
-df <- foreach(x = audios,
+clusterExport(cl, "filedb")
+
+# df <- foreach(x = audios,
+system.time(
+df <- foreach(x = 1:32,
               .combine = rbind,
               .packages = c("seewave",
                             "dplyr",
                             "tuneR",
-                            "soundecology"),
-              .options.snow = opts) %dopar% {
-                
-                try(calc_f(x))
-                
+                            "soundecology",
+                            "googledrive")) %dopar% {
+                aud <- drive_download(as_id(filedb$id[x]))
+                try(calc_f(aud$local_path))
+                # file.remove(aud$local_path)
               }
-
+)
 stopCluster(cl)
 
 write.csv(df,
