@@ -1,6 +1,5 @@
 library(spOccupancy)
 library(tidyverse)
-library(terra)
 
 # We fit a model similar to the imperfect detection one implemented in Tobler et
 # el. 2019, as implemented by the sfMsPGOcc function in the spOccupancy package
@@ -10,7 +9,7 @@ library(terra)
 
 #### CT data ####
 
-camvect <- vect("Data/ct_covars.geojson")
+camvect <- terra::vect("Data/ct_covars.geojson")
 campts_db <- as.data.frame(camvect) %>% mutate(site = gsub("#", "", deployment_id), days = as.numeric(days))
 
 data_raw <- read_csv("Data/ct_records.csv",
@@ -67,13 +66,14 @@ inits.list <- list(beta.comm = 0, alpha.comm = 0, # Community-level occurrence (
 sfmod <- sfMsPGOcc(occ.formula = ~scale(forest)+scale(alt)+scale(ghm), 
                    det.formula = ~1,
                    data = moddata, 
-                   inits = inits.list, 
+                   # inits = inits.list, 
                    # priors = prior.list, 
                    n.factors = 2, # number of latent factors
                    n.batch = 200, batch.length = 25, # total n of samples is n.batch*batch.length
                    n.chains = 3, n.burn = 3000, n.thin = 2
 )
-# this model hasn't run. Below is a non-spatial version
+
+
 lfmod <- lfMsPGOcc(occ.formula = ~scale(forest)+scale(alt)+scale(ghm), 
                    det.formula = ~1,
                    data = moddata, 
@@ -132,7 +132,7 @@ ppc.out3 <- ppcOcc(lfmod3, fit.stat = 'freeman-tukey', group = 1)
 summary(ppc.out3)
 
 #### Plots ####
-betas <- lfmod$beta.samples
+betas <- sfmod$beta.samples
 data.frame(coef = colnames(betas),
            mean = colMeans(betas),
            lq = apply(betas,2,quantile, prob = 0.025),
@@ -175,7 +175,9 @@ beet.data <- list(y = beet_sp_mat,
 beetjsdm <- lfJSDM(formula = ~scale(forest)+scale(alt)+scale(ghm),
                    data = beet.data, 
                    n.samples = 1000, n.thin = 2, n.chains = 3, n.factors = 4)
-# occupancy model
+
+
+# occupancy model with bait as detection covar
 beet_sp_mat <- read.csv("Data/dung_beetles_prc.csv") %>% 
   filter(Bait !="") %>% # remove stations with no bait info
   select(-c(Date,Plot)) %>% 
@@ -183,18 +185,19 @@ beet_sp_mat <- read.csv("Data/dung_beetles_prc.csv") %>%
   mutate(across(where(is.numeric), \(x) as.numeric(x>0))) %>% # make binary
   pivot_longer(where(is.numeric), names_to = "sp", values_to = "pres") %>% 
   filter(sum(pres)>0, .by = site) %>% # filter empty sites
-  filter(sum(pres)>5, .by = sp) %>% # only species present at multiple (>5) sites
-  complete(nesting(site,Bait), sp, fill = list(pres = 0)) %>% 
+  # filter(sum(pres)>5, .by = sp) %>% # only species present at multiple (>5) sites
+  # complete(nesting(site,Bait), sp, fill = list(pres = 0)) %>% 
   complete(site,Bait,sp) %>% 
   arrange(Bait,site,sp)
 nsp <- length(unique(beet_sp_mat$sp))
 nst <- length(unique(beet_sp_mat$site))
 nocc <- length(unique(beet_sp_mat$Bait))
+nsp*nst*nocc
 beetmody <- array(data = beet_sp_mat$pres, dim = c(nsp, nst, nocc),
               dimnames = list(species = unique(beet_sp_mat$sp), 
                               sites = unique(beet_sp_mat$site),
                               bait = unique(beet_sp_mat$Bait)))
-
+beetmody <- beetmody[,apply(beetmody,2,sum,na.rm=T)>5,]
 # create env matrix
 beet_covs <- tibble(site = dimnames(beetmody)[[2]]) %>% left_join(campts_db) %>% 
   select(site, easting, northing, ghm1, lc1,alt1, evi_mean1, lfdistance, distance) %>% 
@@ -220,17 +223,31 @@ beet.data.occ <- list(y = beetmody,
                   coords = beet_covs[,c("x", "y")])
 
 lfmodbeet <- lfMsPGOcc(occ.formula = ~scale(forest)+scale(alt)+scale(ghm),
-                       det.formula = ~1,
+                       det.formula = ~bait,
                    data = beet.data.occ, 
                    n.samples = 1000, n.thin = 2, n.chains = 3, n.factors = 4)
 
-# diagnostics
+
 #### Plots ####
 beetbetas <- beetjsdm$beta.samples
 data.frame(coef = colnames(beetbetas),
            mean = colMeans(beetbetas),
            lq = apply(beetbetas,2,quantile, prob = 0.025),
            uq = apply(beetbetas,2,quantile, prob = 0.975)
+) %>% separate_wider_delim(coef, "-", names = c("parameter", "species")) %>% 
+  filter(parameter!="(Intercept)") %>% 
+  mutate(parameter = gsub("scale(|)", "", parameter)) %>% 
+  ggplot(aes(y = species, x = mean))+
+  geom_vline(xintercept = 0, linetype=2)+
+  geom_linerange(aes(xmin = lq, xmax = uq))+
+  geom_point()+
+  facet_wrap(~parameter)
+
+beetbetasocc <- lfmodbeet$beta.samples
+data.frame(coef = colnames(beetbetasocc),
+           mean = colMeans(beetbetasocc),
+           lq = apply(beetbetasocc,2,quantile, prob = 0.025),
+           uq = apply(beetbetasocc,2,quantile, prob = 0.975)
 ) %>% separate_wider_delim(coef, "-", names = c("parameter", "species")) %>% 
   filter(parameter!="(Intercept)") %>% 
   mutate(parameter = gsub("scale(|)", "", parameter)) %>% 
