@@ -132,7 +132,10 @@ ppc.out3 <- ppcOcc(lfmod3, fit.stat = 'freeman-tukey', group = 1)
 summary(ppc.out3)
 
 #### Plots ####
+
+# extract coefficients
 betas <- sfmod$beta.samples
+# plot occupancy vs predictor values for every sp
 data.frame(coef = colnames(betas),
            mean = colMeans(betas),
            lq = apply(betas,2,quantile, prob = 0.025),
@@ -145,6 +148,45 @@ data.frame(coef = colnames(betas),
   geom_linerange(aes(xmin = lq, xmax = uq))+
   geom_point()+
   facet_wrap(~parameter)
+
+# Plot predicted occupancy vs alt.
+cent_alt <- attr(scale(moddata$occ.covs$alt), "scaled:center")
+scal_alt <- attr(scale(moddata$occ.covs$alt), "scaled:scale")
+cent_forest <- attr(scale(moddata$occ.covs$forest), "scaled:center")
+scal_forest <- attr(scale(moddata$occ.covs$forest), "scaled:scale")
+
+# newalts <- seq(min(moddata$occ.covs$alt), max(moddata$occ.covs$alt), length.out=100)
+newalts <- c(100, 1200, 2000)
+newforest <- c(0, 1)
+altpredvars <- scale(newalts, center = cent_alt,scale = scal_alt)
+forpredvars <- scale(newforest, center = cent_forest,scale = scal_forest)
+# prediction covars. vary only the altitude, leave other covariates at 0
+X.0 <- expand.grid(intercept = 1, forest = forpredvars, alt = altpredvars, ghm = 0)
+# get mean coordinates 
+coords.0 <- matrix(apply(sfmod$coords, 2, mean),ncol=2,nrow=nrow(X.0), byrow = T) 
+modpreds <- predict(sfmod, X.0 = X.0, coords.0 = coords.0)
+
+dim(modpreds$psi.0.samples)
+predmean <- as.numeric(apply(modpreds$psi.0.samples, c(2,3), median))
+predql <- as.numeric(apply(modpreds$psi.0.samples, c(2,3), quantile, probs = 0.25))
+predqu <- as.numeric(apply(modpreds$psi.0.samples, c(2,3), quantile, probs = 0.75))
+
+# Plot of occupancy vs alt (L,M,H) and forest cover (1,0) for example spp
+data.frame(expand.grid(sp = sfmod$sp.names,forest = factor(newforest), alt=factor(newalts)),psi=predmean,psiu=predqu,psil=predql) %>% 
+# data.frame(expand.grid(sp = sfmod$sp.names, alt = newalts, scalealt = altpredvars,), 
+#            psi = predmean, psiu = predqu, psil = predql) %>% 
+  filter(sp %in% c("spotted_paca", "central_american_agouti", "cottontail_dices", 
+                   "tinamou_great", "jaguar", "common_opossum", "ocelot",
+                   "white_nosed_coati", "opossum_four_eyed")) %>% # keep only a subset of species to represent the different patterns
+  ggplot(aes(alt, psi,color = forest,shape=forest))+
+  geom_pointrange(aes(ymin = psil,ymax=psiu), position = position_dodge(width = 0.5), show.legend = F)+
+  facet_wrap(~sp)+
+  theme_classic(base_size = 16)+
+  scale_color_manual(values = c("goldenrod","darkgreen"))+
+  scale_shape_manual(values = c(17, 19))+
+  labs(x = "Altitude (masl)", y = "Predicted occupancy")+
+  theme(strip.background = element_blank(), panel.border = element_rect(fill = NA))
+
 
 #### Pitfall data ####
 DATb <- read.csv("Data/dung_beetles_prc.csv") %>% 
@@ -218,15 +260,49 @@ baitcov <- read.csv("Data/dung_beetles_prc.csv") %>%
   arrange(site)
 
 beet.data.occ <- list(y = beetmody, 
-                  occ.covs = beet_covs[,c("forest", "alt", "ghm", "pa_dist", "lgfor_dist")], 
+                  occ.covs = beet_covs[,c("landcov", "alt", "ghm", "pa_dist", "lgfor_dist")], 
                   det.covs = list(bait = baitcov),
                   coords = beet_covs[,c("x", "y")])
 
-lfmodbeet <- lfMsPGOcc(occ.formula = ~scale(forest)+scale(alt)+scale(ghm),
-                       det.formula = ~bait,
+lfmodbeet <- lfMsPGOcc(occ.formula = ~scale(alt)+scale(landcov)+scale(ghm),
+                       det.formula = ~1,
                    data = beet.data.occ, 
                    n.samples = 1000, n.thin = 2, n.chains = 3, n.factors = 4)
 
+# Plot predicted occupancy vs alt.
+cent_alt <- attr(scale(beet.data.occ$occ.covs[,'alt']), "scaled:center")
+scal_alt <- attr(scale(beet.data.occ$occ.covs[,'alt']), "scaled:scale")
+cent_forest <- attr(scale(beet.data.occ$occ.covs[,'landcov']), "scaled:center")
+scal_forest <- attr(scale(beet.data.occ$occ.covs[,'landcov']), "scaled:scale")
+
+altpredvars <- scale(c(100,1000, 1500), center = cent_alt,scale = scal_alt)
+forpredvars <- scale(newforest, center = cent_forest,scale = scal_forest)
+# prediction covars. vary only the altitude, leave other covariates at 0
+X.0 <- expand.grid(intercept = 1, alt = altpredvars, landcov = forpredvars, ghm = 0)
+# get mean coordinates 
+coords.0 <- matrix(apply(lfmodbeet$coords, 2, mean),ncol=2,nrow=nrow(X.0), byrow = T) 
+modpreds <- predict(lfmodbeet, X.0 = X.0, coords.0 = coords.0)
+
+dim(modpreds$psi.0.samples)
+predmean <- as.numeric(apply(modpreds$psi.0.samples, c(2,3), median))
+predql <- as.numeric(apply(modpreds$psi.0.samples, c(2,3), quantile, probs = 0.25))
+predqu <- as.numeric(apply(modpreds$psi.0.samples, c(2,3), quantile, probs = 0.75))
+
+# Plot of occupancy vs alt (L,M,H) and forest cover (1,0) for example spp
+data.frame(expand.grid(sp = sfmod$sp.names,forest = factor(newforest), alt=factor(newalts)),psi=predmean,psiu=predqu,psil=predql) %>% 
+  # data.frame(expand.grid(sp = sfmod$sp.names, alt = newalts, scalealt = altpredvars,), 
+  #            psi = predmean, psiu = predqu, psil = predql) %>% 
+  filter(sp %in% c("spotted_paca", "central_american_agouti", "cottontail_dices", 
+                   "tinamou_great", "jaguar", "common_opossum", "ocelot",
+                   "white_nosed_coati", "opossum_four_eyed")) %>% # keep only a subset of species to represent the different patterns
+  ggplot(aes(alt, psi,color = forest,shape=forest))+
+  geom_pointrange(aes(ymin = psil,ymax=psiu), position = position_dodge(width = 0.5), show.legend = F)+
+  facet_wrap(~sp)+
+  theme_classic(base_size = 16)+
+  scale_color_manual(values = c("goldenrod","darkgreen"))+
+  scale_shape_manual(values = c(17, 19))+
+  labs(x = "Altitude (masl)", y = "Predicted occupancy")+
+  theme(strip.background = element_blank(), panel.border = element_rect(fill = NA))
 
 #### Plots ####
 beetbetas <- beetjsdm$beta.samples
