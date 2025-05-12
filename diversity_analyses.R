@@ -307,6 +307,25 @@ AIC(acous_nullgamm, acous_gam4, acous_gam3, acous_gam2, acous_gam)
 #no point in the smooths or linear predictors, all the variability can be
 #explained by the site. 
 
-### Similarity beetle-vert ####
-inner_join(beet_gam_db,vert_gam_db)
+### Similarity between taxa ####
+# Mantel correlation between dissimilarity matrices of verts and beetles
+# Find sites in common, subset data frames
+commonsites <- intersect(rownames(comm), rownames(commb))
+commb_commonsites <- commb[commonsites,]
+comm_commonsites <- comm[commonsites,]
+# calculate distances and mantel correlation
+subsetdistvert <- dist(comm_commonsites)
+subsetdistbeet <- dist(commb_commonsites)
+mantel(subsetdistbeet, subsetdistvert)
+# There is no statistically significant correlation. r = 0.0133, p = 0.283.
+
+# Effect of distance
+commonsitedist <- tibble(site = commonsites) %>% left_join(allsites_cov_db) %>% 
+  select(easting, northing) %>% dist()
+mantel(subsetdistbeet, commonsitedist)
+mantel(subsetdistvert, commonsitedist)
+# In the case of beetles, there is a significant, through not so strong  between
+# the distance across sites and their dissimilarity. r = 0.169, p = 0.001.
+plot(commonsitedist[upper.tri(commonsitedist)],subsetdistbeet[upper.tri(subsetdistbeet)])
+
 ####Things to check ####
