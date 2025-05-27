@@ -22,7 +22,7 @@ library(datawizard)
 comm <- read.csv("Data/vert_comm_mat.csv", row.names = 1)
 
 # Import pitfall trap data
-commb <- read.csv("Data/beet_comm_mat.csv", row.names = 1)
+commb <- read.csv("Data/beet_comm_mat.csv", row.names = 1)  
 
 # Import station data #
 allsites_pts <- terra::vect("Data/combined_survey_pts.geojson")
@@ -35,49 +35,51 @@ comm_std <- comm/effort
 # Calculate disimilarities
 vert_dissim <- vegdist(comm_std)
 beet_dissim <- vegdist(commb)
+
 vert_covs_raw <- data.frame(site = rownames(comm)) %>% left_join(allsites_cov_db) %>% 
   select(site, alt1, lc2, ghm1, lfdistance_2) 
 vert_covs <- mutate(vert_covs_raw, 
                     lc = factor(lc2, labels = c("Dense","Open")),
                     alt = standardise(alt1),
+                    alt2 = standardise(alt1)^2,
                     # temp = scale(temp_mean1),
                     ghm = standardise(ghm1),
                     fdist = standardise(log1p(lfdistance_2))) %>% 
-  select(lc,alt,ghm,fdist)
+  select(lc, alt, alt2, ghm, fdist)
   
 beet_covs_raw <- data.frame(site = rownames(commb)) %>% left_join(allsites_cov_db) %>% 
   select(site, alt1, lc2, ghm1, lfdistance_2) 
 beet_covs <- mutate(beet_covs_raw, lc = factor(lc2, labels = c("Dense","Open")),
          alt = standardise(alt1),
+         alt2 = standardise(alt1)^2,
          # temp = scale(temp_mean1),
          ghm = standardise(ghm1),
          fdist = standardise(log1p(lfdistance_2))) %>% 
-  select(lc,alt,ghm,fdist)
+  select(lc,alt,alt2, ghm,fdist)
 
 ##### PERMANOVA #####
 
 # Analysis to see how the different variables affect the dissimilarity across
 # sites
-permanova_comp <- fit_models(make_models(vars = c("lc", "alt", "ghm", "fdist")), 
+permanova_comp <- fit_models(make_models(vars = c("lc", "alt", "alt2","ghm", "fdist")), 
                              veg_data = comm_std, env_data = vert_covs)
 select_models(permanova_comp)
 # We compared different covariate combinations, and the one with the lowest AICc
-# included land cover, altitude, and ghm. However, there are
-# 3 other models that have similar AICc. Among the candidates, the second
-# best one also has the lowest VIF. This one includes altitude and land cover.
-# The VIF for the best model is not that high (1.52) so we could ignore
-# it.
-permanova_comp_beet <- fit_models(make_models(vars = c("lc", "alt", "ghm", "fdist")), 
+# included land cover, altitude, and alt^2. However, there are 3 other models
+# that have similar AICc. The VIF for the best model is not that high (2.35) so
+# we could ignore it.
+permanova_comp_beet <- fit_models(make_models(vars = c("lc", "alt","alt2",  "ghm", "fdist")), 
                              veg_data = commb, env_data = beet_covs)
 select_models(permanova_comp_beet)
 # In the case of beetles, all 6 top models rank similarly. The best one includes
-# altitude, ghm, and land cover. THe VIF for this one is 1.98.
-vert_permanova <- adonis2(comm_std~lc+alt+ghm, data = vert_covs, method = 'bray')
+# altitude, ghm, and lc. THe VIF for this one is 1.98. It performs similar to 
+# the same model with lc instead of ghm, and the other variables combined with alt.
+vert_permanova <- adonis2(comm_std~lc+alt+alt2, data = vert_covs, method = 'bray')
 beet_permanova <- adonis2(commb~lc+alt+ghm, data = beet_covs, method = 'bray')
 vert_permanova
 beet_permanova
 
-# These results suggest that differences in species composition for vertebrates
+  # These results suggest that differences in species composition for vertebrates
 # are influenced mostly by differences in altitude and land cover, with some
 # smaller effect of disturbance.
 
@@ -105,13 +107,13 @@ plot(betadisper(beet_dissim, beet_covs$lc),
 
 
 # Plot PCoA
-par(mfrow = c(2,2))
+par(mfrow = c(1,2))
 plot(vert_pcoa$vectors[,1:2], las=1, asp = 1, xlab = "PCoA 1", ylab = "PCoA 2", type = 'n', main = "Vertebrates")
 ordiellipse(vert_pcoa$vectors, vert_covs$lc, draw = "polygon", col = c("darkgreen", "goldenrod"))
 points(vert_pcoa$vectors[vert_covs$lc=="Dense",1:2], pch = 16, col = "darkgreen")
 points(vert_pcoa$vectors[vert_covs$lc=="Open",1:2], pch = 17, col = "goldenrod")
 ordisurf(vert_pcoa$vectors, vert_covs_raw$alt1, add = T, col = "gray50")
-plot(vert_envfit_pcoa, labels = list(factors = c("Dense", "Open")), bg='white', col = "gray10")
+plot(vert_envfit_pcoa, labels = list(factors = c("Dense", "Open"), vectors = c("Alt", "Alt^2", "gHM", "Forest dist")), bg='white', col = "gray10")
 
 # PCoA for beetles
 plot(beet_pcoa$vectors[,1:2], type = 'n', las=1, asp = 1, xlab = "PCoA 1", ylab = "PCoA 2", main = "Beetles")
@@ -119,8 +121,19 @@ ordiellipse(beet_pcoa$vectors, beet_covs$lc, draw = "polygon", col = c("darkgree
 points(beet_pcoa$vectors[beet_covs$lc=="Dense",1:2], pch = 16, col = "darkgreen")
 points(beet_pcoa$vectors[beet_covs$lc=="Open",1:2], pch = 17, col = "goldenrod")
 ordisurf(beet_pcoa$vectors, beet_covs_raw$alt1, add = T, col = "gray50")
-plot(beet_envfit_pcoa, labels = list(factors = c("Dense", "Open")), bg='white', col = "gray10")
+plot(beet_envfit_pcoa, labels = list(factors = c("Dense", "Open"), vectors = c("Alt", "Alt^2", "gHM", "Forest dist")), bg='white', col = "gray10")
 par(mfrow = c(1,1))
+
+## NMDS approach ##
+vert_NMDS <- metaMDS(comm_std, trymax = 100)
+beet_NMDS <- metaMDS(commb)
+
+# Fit environ variables
+vert_envfit_nmds <- envfit(vert_NMDS, vert_covs)
+beet_envfit_nmds <- envfit(beet_NMDS, beet_covs)
+
+
+
 #### Community metrics ####
 
 # plot richness (observed) against covariates individually
@@ -195,7 +208,6 @@ check_collinearity(beet_rich_lm2) # removing fdist reduces all VIF
 beet_rich_gam <- gam(n~lc+s(ghm)+s(alt)+s(fdist), 
                      family = poisson, data = beet_gam_db, method = 'REML')
 summary(beet_rich_gam)
-check_concurvity(beet_rich_gam)
 # no significant smooths, nor linear effects. ghm and Fdist reduced to linear
 # effect. 
 beet_rich_gam <- update(beet_rich_gam, .~.-s(ghm)+ghm-s(fdist)+fdist)
@@ -248,7 +260,7 @@ summary(beet_div_lm) # sig ghm and alt
 beet_div_gam <- gam(s~lc+s(ghm)+s(alt)+s(fdist), data=beet_gam_db, method = "REML") # in the full model the ghm and temp are both reduced to linear effects. There is also no sig effect of ghm or lc.
 summary(beet_div_gam)
 # All terms are reduced to linear effects.
-check_collinearity(beet_div_lm) # moderate correlation of lc and fdist
+check_collinearity(beet_div_lm) # High corr of fdist
 beet_div_lm2 <- update(beet_div_lm, .~.-fdist)
 summary(beet_div_lm2)
 check_collinearity(beet_div_lm2) # Correlations are low. 
@@ -257,7 +269,9 @@ beet_div_lm3 <- update(beet_div_lm2, .~.-lc)
 summary(beet_div_lm3) # ghm no longer sig
 beet_div_lm4 <- update(beet_div_lm3, .~.-ghm)
 summary(beet_div_lm4)
-AIC(beet_div_lm, beet_div_lm2, beet_div_lm3, beet_div_lm4) 
+beet_div_lm5 <- update(beet_div_lm2, .~.-ghm)
+summary(beet_div_lm5)
+AIC(beet_div_lm, beet_div_lm2, beet_div_lm3, beet_div_lm4, beet_div_lm5) 
 anova(beet_div_lm3, beet_div_lm2, test='F')
 # all models have comparable AIC, the top two (2 and 3) are nearly identical. I
 # will stick with model 2 (alt, ghm, lc).
@@ -277,7 +291,6 @@ check_concurvity(acous_gam) # high concurvity in parametric terms
 check_collinearity(acous_gam) # extremely high VIF, starting with lc
 acous_gam2 <- update(acous_gam, .~.-lc)
 summary(acous_gam2)
-check_concurvity(acous_gam2) # still high concurvity in parametric
 check_collinearity(acous_gam2)
 acous_gam3 <- update(acous_gam2, .~.-ghm)
 summary(acous_gam3) # alt reduced to nearly linear
@@ -294,7 +307,7 @@ summary(acous_nullgamm)
 summary(acous_nullgamm2)
 AIC(acous_nullgamm, acous_nullgamm2, acous_gam5)
 # The null model with only random effects has comparable AIC as model 5
-draw(acous_gam5, residuals = T)
+
 
 ##### Visualize diversity ####
 # Vert richness
@@ -307,13 +320,15 @@ vert_rich_pred_db <- data.frame(newdata_raw,n = pred_vert_rich$fit, se = pred_ve
 pvertrich <- data.frame(n = specnumber(comm),vert_covs_raw) %>% 
   mutate(lc = factor(lc2, labels = c("Dense", "Open"))) %>% 
   ggplot(aes(alt1,n))+
-  geom_ribbon(aes(x = alt, ymin = n-se, ymax = n+se, fill = lc), data = vert_rich_pred_db, alpha = 0.5)+
+  geom_ribbon(aes(x = alt, ymin = n-se, ymax = n+se, fill = lc), data = vert_rich_pred_db)+
   geom_line(aes(alt,n, color = lc),vert_rich_pred_db)+
   geom_point(aes(color = lc, shape = lc))+
   labs(x = "Altitude (masl)", y = "Species richness", color = "Land cover", fill = "Land cover", shape = "Land cover")+
-  scale_fill_manual(values = c("green3", "gold2"))+
+  scale_fill_manual(values = alpha(c("darkgreen", "goldenrod"), alpha = 0.3))+
   scale_color_manual(values = c("darkgreen", "goldenrod"))+
   theme_pubr(base_size = 14)
+
+ggplot(vert_gam_db, aes(alt,n))+geom_point()+geom_line(aes(y = fitted(vert_rich_gam4),col=lc))
 # Beetle richness
 pred_alts_raw <- seq(min(beet_covs_raw$alt1), max(beet_covs_raw$alt1),length.out = 100)
 newdata_raw <- expand.grid(intercept = 1, lc = levels(beet_covs$lc), alt = pred_alts_raw)
@@ -324,11 +339,11 @@ beet_rich_pred_db <- data.frame(newdata_raw,n = pred_beet_rich$fit, se = pred_be
 pbeetrich <- data.frame(n = specnumber(commb),beet_covs_raw) %>% 
   mutate(lc = factor(lc2, labels = c("Dense", "Open"))) %>% 
   ggplot(aes(alt1,n))+
-  geom_ribbon(aes(x = alt, ymin = n-se, ymax = n+se, fill = lc), data = beet_rich_pred_db, alpha = 0.5)+
+  geom_ribbon(aes(x = alt, ymin = n-se, ymax = n+se, fill = lc), data = beet_rich_pred_db)+
   geom_line(aes(alt,n, color = lc),beet_rich_pred_db)+
   geom_point(aes(color = lc, shape = lc))+
   labs(x = "Altitude (masl)", y = "Species richness", color = "Land cover", fill = "Land cover", shape = "Land cover")+
-  scale_fill_manual(values = c("green3", "gold2"))+
+  scale_fill_manual(values = alpha(c("darkgreen", "goldenrod"), alpha = 0.3))+
   scale_color_manual(values = c("darkgreen", "goldenrod"))+
   theme_pubr(base_size = 14)
 # Vert diversity
@@ -341,11 +356,11 @@ vert_div_pred_db <- data.frame(newdata_raw,n = pred_vert_div$fit, se = pred_vert
 pvertdiv <- data.frame(n = diversity(comm),vert_covs_raw) %>% 
   mutate(lc = factor(lc2, labels = c("Dense", "Open"))) %>% 
   ggplot(aes(alt1,n))+
-  geom_ribbon(aes(x = alt, ymin = n-se, ymax = n+se, fill = lc), data = vert_div_pred_db, alpha = 0.5)+
+  geom_ribbon(aes(x = alt, ymin = n-se, ymax = n+se, fill = lc), data = vert_div_pred_db)+
   geom_line(aes(alt,n, color = lc),vert_div_pred_db)+
   geom_point(aes(color = lc, shape = lc))+
   labs(x = "Altitude (masl)", y = "Diversity", color = "Land cover", fill = "Land cover", shape = "Land cover")+
-  scale_fill_manual(values = c("green3", "gold2"))+
+  scale_fill_manual(values = alpha(c("darkgreen", "goldenrod"), alpha = 0.3))+
   scale_color_manual(values = c("darkgreen", "goldenrod"))+
   theme_pubr(base_size = 14)
 
@@ -359,35 +374,61 @@ beet_div_pred_db <- data.frame(newdata_raw,n = pred_beet_div$fit, se = pred_beet
 pbeetdiv <- data.frame(n = diversity(commb),beet_covs_raw) %>% 
   mutate(lc = factor(lc2, labels = c("Dense", "Open"))) %>% 
   ggplot(aes(alt1,n))+
-  geom_ribbon(aes(x = alt, ymin = n-se, ymax = n+se, fill = lc), data = beet_div_pred_db, alpha = 0.5)+
+  geom_ribbon(aes(x = alt, ymin = n-se, ymax = n+se, fill = lc), data = beet_div_pred_db)+
   geom_line(aes(alt,n, color = lc),beet_div_pred_db)+
   geom_point(aes(color = lc, shape = lc))+
   labs(x = "Altitude (masl)", y = "Diversity", color = "Land cover", fill = "Land cover", shape = "Land cover")+
-  scale_fill_manual(values = c("green3", "gold2"))+
+  scale_fill_manual(values = alpha(c("darkgreen", "goldenrod"), alpha = 0.3))+
   scale_color_manual(values = c("darkgreen", "goldenrod"))+
   theme_pubr(base_size = 14)
 
-cowplot::plot_grid(pvertrich,pvertdiv,pbeetrich,pbeetdiv)
+ggarrange(pvertrich,pbeetrich,pvertdiv,pbeetdiv, labels = 'auto', common.legend = T, align = 'hv')
 ### Similarity between taxa ####
 # Mantel correlation between dissimilarity matrices of verts and beetles
 # Find sites in common, subset data frames
 commonsites <- intersect(rownames(comm), rownames(commb))
 commb_commonsites <- commb[commonsites,]
 comm_commonsites <- comm_std[commonsites,]
-# calculate distances and mantel correlation
-subsetdistvert <- vegdist(comm_commonsites)
-subsetdistbeet <- vegdist(commb_commonsites)
+# calculate betadiversity as dissimilarity and mantel correlation
+subsetdistvert <- betadiver(comm_commonsites, method = "w")
+subsetdistbeet <- betadiver(commb_commonsites, method = "w")
+
 mantel(subsetdistbeet, subsetdistvert)
-# There is a statistically significant correlation. r = 0.175, p = 0.001.
+# There is a statistically significant correlation. r = 0.175, p = 0.001. (with Bray distance)
+# r = 0.06569, p = 0.111 (for betadiver metric - Sorensen, presence/absence)
 plot(subsetdistbeet, subsetdistvert)
 
-# Effect of distance
+# Include Effect of distance, calculate partial statistic
 commonsitedist <- tibble(site = commonsites) %>% left_join(allsites_cov_db) %>% 
   select(easting, northing) %>% dist()
-mantel(subsetdistbeet, commonsitedist)
+mantel.partial(subsetdistbeet, subsetdistvert, commonsitedist)
 mantel(subsetdistvert, commonsitedist)
 # Geographical distance is correlated with community dissimilarity for both
 # vertebrates (r = 0.1977, p = 0.001) and beetles (r = 0.321, p = 0.001). There
 # is a lot of noise in this relationship though.
 
+# Compare and plot rich, div, for both taxa, and compare with MFC
+# aggregate the index calculated into weekly values, and only taking sunrise and sunset values
+comb_metrics_db <- acoustic_jointdb %>% filter(hour(dttm)>5) %>% # keep only daytime recordings
+  summarise(mean_MFC=mean(MFC), .by = site) %>% 
+  select(site,mean_MFC) %>%
+  full_join(data.frame(site = rownames(comm), n_vert = specnumber(comm), s_vert = diversity(comm))) %>% 
+  full_join(data.frame(site = rownames(commb), n_beet = specnumber(commb), s_beet = diversity(commb))) %>% 
+  left_join(allsites_cov_db)
+
+p1 <- ggplot(comb_metrics_db, aes(n_vert,n_beet))+geom_point()+theme_pubr(base_size = 14)+
+  labs(x = "Vertebrate richness", y = "Beetle richness")
+  # stat_smooth(method = 'lm', color = "gray50")
+p2 <- ggplot(comb_metrics_db, aes(n_vert,mean_MFC))+geom_point()+theme_pubr(base_size = 14)+
+  labs(x = "Vertebrate richness", y = "MFC")
+  # stat_smooth(method = 'lm')
+p3 <- ggplot(comb_metrics_db, aes(mean_MFC, n_beet))+geom_point()+theme_pubr(base_size = 14)+
+  labs(x = "Beetle richness", y = "MFC")
+  # stat_smooth(method = 'lm')
+p4 <- ggplot(comb_metrics_db, aes(s_vert,s_beet))+geom_point()+theme_pubr(base_size = 14)+
+  labs(x = "Vertebrate diversity", y = "Beetle diversity")
+# stat_smooth(method = 'lm')
+
+ggarrange(p1,p2,p4,p3, labels='auto')
 ####Things to check ####
+# Maybe analyze associations between large herbivores and specific dung beetle species/richness?
