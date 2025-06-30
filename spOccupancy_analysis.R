@@ -70,7 +70,7 @@ prior.list <- list(phi.unif = list(3/maxdist, 3/mindist))
 inits.list <- list(beta.comm = 0, alpha.comm = 0, # Community-level occurrence (beta.comm) and detection (alpha.comm) regression coefficients
                    beta = 0, alpha = 0, # species-level occ and det (could be length nsp)
                    tau.sq.beta = 1, tau.sq.alpha = 1, # comm=level variance for occ and det
-                   phi = 3/1000, # spatial decay parameter. 3/dist at which corr drops to 0.05
+                   phi = 3/10000, # spatial decay parameter. 3/dist at which corr drops to 0.05
                    sigma.sq.psi = 1, sigma.sq.p = 1, # random effect variances for occ and det formulas
                    z = apply(mody, c(1,2), max, na.rm = T)
 )
@@ -123,16 +123,16 @@ waicOcc(sfmodfull) # waic = 8062 -> 7995.03
 waicOcc(sfmodalt)  # wAIC = 8079
 waicOcc(sfmodalt2) # wAIC = 8058 -> 7995.71
 waicOcc(sfmodalt2ghm) # wAIC = 8054 -> 7997.57
-waicOcc(sfmodaltghm) # wAIC = 8079
+waicOcc(sfmodaltghm) # wAIC = 8079 -> 8002.8
 waicOcc(sfmodaltlc) # wAIC = 8091
 waicOcc(sfmodalt2lc) # wAIC = 8064 -> 8002.06
 # lowest wAIC is given by full model. The spatial covariance is not properly estimated though.
 
 
 # Model summary
-summary(sfmodalt2ghm)
+summary(sfmodfull)
 # Phi estimates have rhat>>1.1 (2,4). Intercept and alt2 also have Rhat>1.1. 
-plot(sfmodalt2ghm, 'beta', dens = F)
+plot(sfmodfull, 'beta', dens = F)
 
 # Models without spatial covariates.
 lfmodfull <- lfMsPGOcc(occ.formula = ~forest+scale(alt)+I(scale(alt)^2)+scale(ghm), 
@@ -164,7 +164,7 @@ waicOcc(basemodalt2) # 8220, among the worst models
 # diagnostics
 ppc.out <- ppcOcc(sfmodfull, fit.stat = 'freeman-tukey', group = 1)
 summary(ppc.out)
-# The model's Bayesian p value is 0.237, so not terrible, but rather low (0.5
+# The full model's Bayesian p value is 0.238, so not terrible, but rather low (0.5
 # is good, <0.1 or >0.9 is poor). The fit is terrible for agoutis (p=0), and p<0.1 for collared
 # peccaries, common opossums, rabbits, curassows, pumas, pacas, and coatis. 
 
@@ -184,12 +184,12 @@ data.frame(coef = colnames(betas),
   geom_vline(xintercept = 0, linetype=2)+
   geom_linerange(aes(xmin = lq, xmax = uq))+
   geom_point()+
-  facet_wrap(~parameter)
+  facet_wrap(vars(parameter))
 
 ##### Predicted occupancy ####
 #We can use the model predictions to see how the expected richness compares
 #against observed richness 
-modpreds <- predict(sfmodalt2ghm, data.frame(int = 1, alt = scale(moddata$occ.covs$alt), alt2 = scale(moddata$occ.covs$alt)^2, ghm = scale(moddata$occ.covs$ghm)),moddata$coords, type = 'occupancy')
+modpreds <- predict(sfmodfull, data.frame(int = 1, alt = scale(moddata$occ.covs$alt), alt2 = scale(moddata$occ.covs$alt)^2, ghm = scale(moddata$occ.covs$ghm)),moddata$coords, type = 'occupancy')
 predrich <- apply(modpreds$z.0.samples,c(1,3),sum)|>apply(2,quantile,p = c(0.25,0.5,0.75))
 rownames(predrich) <- c('lq','med','uq')
 predrich <- t(predrich)
@@ -210,40 +210,39 @@ newalts <- c(100, 1200, 2000)
 # newforest <- c(0, 1)
 altpredvars <- scale(newalts, center = cent_alt,scale = scal_alt)
 # forpredvars <- scale(newforest, center = cent_forest,scale = scal_forest)
-# prediction covars. vary only the altitude, leave other covariates at 0
-X.0 <- data.frame(intercept = 1, forest = 1, alt = altpredvars, alt2 = altpredvars^2, ghm = rep(c(-2,2),each = 3))
-
 # get mean coordinates 
 coords.0 <- matrix(colMeans(moddata$coords),ncol=2,nrow=nrow(X.0), byrow = T) 
-modpreds <- predict(sfmodfull, X.0 = X.0, coords.0 = coords.0)
-modpreds2occ <- modpreds2$psi.0.samples
-dim(modpreds2occ)
+# prediction covars. vary only the altitude, leave other covariates at 0
+X.0 <- data.frame(intercept = 1, forest = rep(c(0,1), each=3), alt = altpredvars, alt2 = altpredvars^2, ghm = rep(c(-2,2),each = 3))
+
+modpredsocc <- predict(sfmodfull, X.0 = X.0, coords.0 = coords.0)[['psi.0.samples']]
+dim(modpredsocc)
 
 # Plot of occupancy vs alt (L,M,H) for example spp
-preddb <- data.frame(expand.grid(1:3000, sp = sfmodfull$sp.names,alt = altpredvars, ghm = c(-2,2)),psi=as.matrix(modpreds2occ)) 
+preddb <- data.frame(expand.grid(1:1200, sp = sfmodfull$sp.names,alt = altpredvars, ghm = c(-2,2)),psi=as.matrix(modpredsocc)) 
 
 # data.frame(expand.grid(sp = sfmodalt2$sp.names, alt=factor(newalts))) %>% 
 # c("white_nosed_coati", "collared_peccary", "tinamou_great", "ocelot", "jaguar", "baird's_tapir", "spotted_paca")
 filter(preddb, sp %in% c("tinamou_great", "jaguar", "ocelot",
-                   "baird's_tapir","white_lipped_peccary","white_nosed_coati",
-                   "jaguarundi","margay","opossum_four_eyed")) %>% # keep only a subset of species to represent the different patterns
-  mutate(sp = factor(sp, 
-                     levels = c("baird's_tapir","white_lipped_peccary","jaguar", 
-                                "ocelot","margay","jaguarundi",
-                                "tinamou_great", "white_nosed_coati","opossum_four_eyed"),
-                     labels = c("Tapir", "White-lipped peccary", "Jaguar",  
-                                "Ocelot", "Margay", "Jaguarundi", 
-                                "Great tinamou","Coati", "Four-eyed opossum"))) %>% 
+                   "baird's_tapir","collared_peccary",
+                   "opossum_four_eyed")) %>% # keep only a subset of species to represent the different patterns
+  # mutate(sp = factor(sp, 
+  #                    levels = c("baird's_tapir","collared_peccary","jaguar", 
+  #                               "ocelot","jaguarundi",
+  #                               "tinamou_great", "white_nosed_coati","opossum_four_eyed"),
+  #                    labels = c("Tapir", "Collared peccary", "Jaguar",  
+  #                               "Ocelot", "Jaguarundi", 
+  #                               "Great tinamou","Coati", "Four-eyed opossum"))) %>% 
   ggplot(aes(factor(alt),psi, fill = factor(ghm)))+
   # geom_violin(scale = "width", fill = "seagreen")+
-  # geom_violin(scale = 'width', show.legend = F)+
+  geom_violin(scale = 'width', show.legend = F)+
   stat_summary(aes(color = factor(ghm)), fun = "median", fun.min = \(x) quantile(x, p = 0.25), fun.max = \(x) quantile(x, p = 0.75), position = position_dodge(0.9), show.legend = F)+
   facet_wrap(~sp)+
   theme_classic(base_size = 12)+
   labs(x = "Altitude (masl)", y = "Predicted occupancy")+
   scale_x_discrete(labels = newalts)+
-  scale_fill_manual(values = alpha(c("darkgreen", "goldenrod"), alpha = 0.5))+
-  scale_color_manual(values = c("darkgreen", "darkgoldenrod"))+
+  scale_fill_manual(values = alpha(c("skyblue", "indianred"), alpha = 0.5))+
+  scale_color_manual(values = c("skyblue4", "indianred4"))+
   theme(strip.background = element_blank(), panel.border = element_rect(fill = NA))
 
 
@@ -432,6 +431,6 @@ filter(preddb, sp %in% c("Onthophagus_acuminatus", "Coprophanaeus_telamon", "Cop
   theme_classic(base_size = 12)+
   labs(x = "Altitude (masl)", y = "Predicted occupancy")+
   scale_x_discrete(labels = newalts)+
-  scale_fill_manual(values = alpha(c("darkgreen", "goldenrod"), alpha = 0.5))+
-  scale_color_manual(values = c("darkgreen", "darkgoldenrod"))+
+  scale_fill_manual(values = alpha(c("skyblue", "indianred"), alpha = 0.5))+
+  scale_color_manual(values = c("skyblue4", "indianred4"))+
   theme(strip.background = element_blank(), panel.border = element_rect(fill = NA))
