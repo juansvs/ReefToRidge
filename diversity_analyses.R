@@ -37,7 +37,8 @@ vert_dissim <- vegdist(comm_std)
 beet_dissim <- vegdist(commb)
 
 vert_covs_raw <- data.frame(site = rownames(comm)) %>% left_join(allsites_cov_db) %>% 
-  select(site, alt1, lc2, ghm1, lfdistance_2) 
+  select(site, alt1, lc2, ghm1, lfdistance_2, easting, northing) 
+
 vert_covs <- mutate(vert_covs_raw, 
                     lc = factor(lc2, labels = c("Dense","Open")),
                     alt = standardise(alt1),
@@ -45,8 +46,8 @@ vert_covs <- mutate(vert_covs_raw,
                     # temp = scale(temp_mean1),
                     ghm = standardise(ghm1),
                     fdist = standardise(log1p(lfdistance_2))) %>% 
-  select(lc, alt, alt2, ghm, fdist)
-  
+  select(lc, alt, alt2, ghm, fdist, easting, northing)
+# could also standardize using decostand  
 beet_covs_raw <- data.frame(site = rownames(commb)) %>% left_join(allsites_cov_db) %>% 
   select(site, alt1, lc2, ghm1, lfdistance_2) 
 beet_covs <- mutate(beet_covs_raw, lc = factor(lc2, labels = c("Dense","Open")),
@@ -85,13 +86,14 @@ beet_permanova
 
 
 ##### PERMANOVA viz #####
+#####------ PCoA #####
 # Run PCoA for visualization of PERMANOVA
 vert_pcoa <- pcoa(vert_dissim)
 beet_pcoa <- pcoa(beet_dissim)
 
 # Fit environ variables
-vert_envfit_pcoa <- envfit(vert_pcoa$vectors, vert_covs)
-beet_envfit_pcoa <- envfit(beet_pcoa$vectors, beet_covs)
+vert_envfit_pcoa <- envfit(vert_pcoa$vectors~lc+alt+alt2, data = vert_covs)
+beet_envfit_pcoa <- envfit(beet_pcoa$vectors~lc+alt+ghm, data = beet_covs)
 
 # test if there is more variability in open vs dense forest sites for vertebrates
 anova(betadisper(vert_dissim, vert_covs$lc))
@@ -108,31 +110,45 @@ plot(betadisper(beet_dissim, beet_covs$lc),
 
 # Plot PCoA
 par(mfrow = c(1,2))
-plot(vert_pcoa$vectors[,1:2], las=1, asp = 1, xlab = "PCoA 1", ylab = "PCoA 2", type = 'n', main = "Vertebrates")
+plot(vert_pcoa$vectors[,1:2], las=1, asp = 1, xlab = "Axis 1", ylab = "Axis 2", type = 'n', main = "Vertebrates")
 ordiellipse(vert_pcoa$vectors, vert_covs$lc, draw = "polygon", col = c("darkgreen", "goldenrod"))
 points(vert_pcoa$vectors[vert_covs$lc=="Dense",1:2], pch = 16, col = "darkgreen")
 points(vert_pcoa$vectors[vert_covs$lc=="Open",1:2], pch = 17, col = "goldenrod")
 ordisurf(vert_pcoa$vectors, vert_covs_raw$alt1, add = T, col = "gray50")
-plot(vert_envfit_pcoa, labels = list(factors = c("Dense", "Open"), vectors = c("Alt", "Alt^2", "gHM", "Forest dist")), bg='white', col = "gray10")
+plot(vert_envfit_pcoa, labels = list(factors = c("Dense", "Open"),vectors = c("Alt", "Alt^2")), bg='white', col = "gray10", p.max = 0.05)
+# plot(vert_envfit_pcoa, labels = list(factors = c("Dense", "Open"), vectors = c("Alt", "Alt^2", "gHM", "Forest dist")), bg='white', col = "gray10")
 
 # PCoA for beetles
-plot(beet_pcoa$vectors[,1:2], type = 'n', las=1, asp = 1, xlab = "PCoA 1", ylab = "PCoA 2", main = "Beetles")
+plot(beet_pcoa$vectors[,1:2], type = 'n', las=1, asp = 1, xlab = "Axis 1", ylab = "Axis 2", main = "Beetles")
 ordiellipse(beet_pcoa$vectors, beet_covs$lc, draw = "polygon", col = c("darkgreen", "goldenrod"))
 points(beet_pcoa$vectors[beet_covs$lc=="Dense",1:2], pch = 16, col = "darkgreen")
 points(beet_pcoa$vectors[beet_covs$lc=="Open",1:2], pch = 17, col = "goldenrod")
 ordisurf(beet_pcoa$vectors, beet_covs_raw$alt1, add = T, col = "gray50")
-plot(beet_envfit_pcoa, labels = list(factors = c("Dense", "Open"), vectors = c("Alt", "Alt^2", "gHM", "Forest dist")), bg='white', col = "gray10")
+plot(beet_envfit_pcoa, labels = list(factors = c("Dense", "Open"), vectors = c("Alt",  "gHM")), bg='white', col = "gray10")
 par(mfrow = c(1,1))
 
-## NMDS approach ##
+##### NMDS approach #####
 vert_NMDS <- metaMDS(comm_std, trymax = 100)
-beet_NMDS <- metaMDS(commb)
+beet_NMDS <- metaMDS(commb, trymax = 100) # MS134 plots very separate from the rest. (Stick with PCoA)
 
 # Fit environ variables
 vert_envfit_nmds <- envfit(vert_NMDS, vert_covs)
 beet_envfit_nmds <- envfit(beet_NMDS, beet_covs)
 
+par(mfrow = c(1,2))
+plot(vert_NMDS, type = 'none', main = "Vertebrates")
+points(vert_NMDS,select = vert_covs$lc=="Open",col = "goldenrod",pch=17)
+points(vert_NMDS,select = vert_covs$lc=="Dense",col = "darkgreen",pch=16)
+ordiellipse(vert_NMDS, groups = vert_covs$lc, col = c("darkgreen","goldenrod"))
+text(vert_NMDS, display = 'species', cex = 0.8)
+plot(vert_envfit_nmds, col = 'blue', cex = 0.8, p.max = 0.05)
 
+plot(beet_NMDS, type = 'none', main = "Beetles")
+points(beet_NMDS,select = beet_covs$lc=="Open",col = "goldenrod",pch=17)
+points(beet_NMDS,select = beet_covs$lc=="Dense",col = "darkgreen",pch=16)
+ordiellipse(beet_NMDS, groups = beet_covs$lc, col = c("darkgreen","goldenrod"))
+text(beet_NMDS, display = 'species', cex = 0.8)
+plot(beet_envfit_nmds, col = 'blue', cex = 0.8, p.max = 0.05)
 
 #### Community metrics ####
 
@@ -429,6 +445,6 @@ p4 <- ggplot(comb_metrics_db, aes(s_vert,s_beet))+geom_point()+theme_pubr(base_s
   labs(x = "Vertebrate diversity", y = "Beetle diversity")
 # stat_smooth(method = 'lm')
 
-ggarrange(p1,p2,p4,p3, labels='auto')
+ggarrange(p1,p4, labels='auto')
 ####Things to check ####
 # Maybe analyze associations between large herbivores and specific dung beetle species/richness?
