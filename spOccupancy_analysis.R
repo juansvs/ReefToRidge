@@ -22,6 +22,12 @@ cams_include <- summarise(data_raw, .by = deployment_id, t=max(timestamp)-min(ti
   mutate(site = sub("#","",deployment_id)) %>% 
   select(site) 
 DAT <- read_csv("Data/records_wild.csv") %>% inner_join(cams_include)
+### temperature data ###
+temp_data_day <- read.csv("Data/LST_2020_allsites_day.csv", 
+                          col.names = c("date", "LST", "site")) %>% 
+  mutate(date = mdy(date), month = month(date))
+# summarize by station
+daytemp_sum <- summarise(temp_data_day, max_T = max(LST), min_T = min(LST), mean_T = mean(LST), sd_T = sd(LST), .by = site)
 
 # for the occupancy model the order of species in the array matters.reorder
 # species to put the most common first, and then others that will behave
@@ -31,12 +37,14 @@ sp_order <- c("central_american_agouti", "oncilla", "baird's_tapir","greater_gri
               "jaguar", "tinamou_little", "collared_peccary", "guan_crested", "striped_hog_nosed_skunk", "central_american_red_brocket", "common_opossum",
               "jaguarundi", "cottontail_dices", "opossum_four_eyed", "nine_banded_armadillo", "great_curassow")
 
+#### Model prep ####
 # model data
 y_df <- filter(DAT, !grepl("uid", common_name)) %>% 
   left_join(select(allsites_cov_db,site)) %>% 
+  left_join(daytemp_sum) %>% 
   mutate(smplwk = as.numeric(1+floor(difftime(timestamp,min(timestamp),units = "weeks"))), .by = site) %>% 
   mutate(smplmon = 1+smplwk%/%4) %>% 
-  filter(max(smplwk)>4, .by = site) %>% 
+  filter(max(smplwk)>4, .by = site) %>% # keep only stations working for 4+ weeks
   count(smplmon, site, common_name) %>% 
   complete(nesting(smplmon, site), common_name, fill = list(n=0)) %>% # make undetected species explicit (only existing sampling time) fill with 0s
   complete(smplmon, site, common_name) %>% # fill missing times/species with NA
@@ -50,12 +58,14 @@ mody <- array(data = as.numeric(y_df$n>0), dim = c(nsp, nst, nocc),
               dimnames = list(species = unique(y_df$common_name), sites = unique(y_df$site), occ = 1:nocc))
 # reorder y according to order established previously
 mody <- mody[sp_order,,]
-covs_df <- distinct(y_df,site) %>% left_join(campts_db) %>% 
-  select(site, easting, northing, ghm1, lc2,alt1, lfdistance_2) %>% 
-  rename(x = easting, y = northing, forest = lc2, alt = alt1, ghm = ghm1, Fdist = lfdistance_2) %>% 
+covs_df <- distinct(y_df,site) %>% 
+  left_join(allsites_cov_db) %>% 
+  left_join(daytemp_sum) %>% 
+  select(site, easting, northing, ghm1, lc2, alt1, mean_T, sd_T) %>% 
+  rename(x = easting, y = northing, forest = lc2, alt = alt1, ghm = ghm1) %>% 
   mutate(forest = factor(forest, labels = c("Dense", "Open"))) 
 moddata <- list(y = mody, 
-                occ.covs = covs_df[,c("forest","alt", "ghm", "Fdist")] ,
+                occ.covs = covs_df[,c("forest","alt", "ghm", "mean_T", "sd_T")] ,
                 # det.covs = covs_df[,"site"],
                 coords = as.matrix(covs_df[,c("x", "y")])
 )
@@ -76,7 +86,7 @@ inits.list <- list(beta.comm = 0, alpha.comm = 0, # Community-level occurrence (
 )
 
 
-# Run model
+#### Run models ####
 # Null model, intercept only
 sfmod_null <- sfMsPGOcc(occ.formula = ~1, 
                         det.formula = ~1,
@@ -106,7 +116,7 @@ waicOcc(sfmod_null_updated) # 8026.6, much lower than the non-updated model
 summary(ppcOcc(sfmod_null_updated, "freeman-tukey", group = 1)) # the model seems to have low Bayesian p-values for common spp (e.g. p = 0 for agoutis)
 
 # Create alternative models with covars
-sfmodfull <- update(sfmod_null, occ.formula = ~forest+scale(alt)+I(scale(alt)^2)+scale(ghm),
+sfmodfull <- update(sfmod_null, occ.formula = ~forest+scale(alt)+I(scale(alt)^2)+scale(ghm)+scale(mean_T),
                     n.factors = 5, n.batch = 600, n.burn = 5000, n.thin = 25)
 # the R hat is still very high for the spatial covariance latent factors, with
 # very limited eff. sample size (ESS)
@@ -117,15 +127,20 @@ sfmodalt2ghm <- update(sfmodfull, occ.formula = ~scale(alt)+I(scale(alt)^2)+scal
 sfmodaltghm <- update(sfmodfull, occ.formula = ~scale(alt)+scale(ghm))
 sfmodaltlc <- update(sfmodfull, occ.formula = ~forest+scale(alt))
 sfmodalt2lc <- update(sfmodfull, occ.formula = ~forest+scale(alt)+I(scale(alt)^2))
+sfmodtempalt2lc <- update(sfmodfull, occ.formula = ~scale(mean_T)+I(scale(alt)^2)+forest)
+sfmodtemplc <- update(sfmodfull, occ.formula = ~scale(mean_T)+forest)
+
 
 # Compare models based on wAIC
-waicOcc(sfmodfull) # waic = 8062 -> 7995.03
-waicOcc(sfmodalt)  # wAIC = 8079
-waicOcc(sfmodalt2) # wAIC = 8058 -> 7995.71
+waicOcc(sfmodfull)    # waic = 8062 -> 7995.03 -> 8986.25 w/ temp
+waicOcc(sfmodalt)     # wAIC = 8079
+waicOcc(sfmodalt2)    # wAIC = 8058 -> 7995.71
 waicOcc(sfmodalt2ghm) # wAIC = 8054 -> 7997.57
-waicOcc(sfmodaltghm) # wAIC = 8079 -> 8002.8
-waicOcc(sfmodaltlc) # wAIC = 8091
-waicOcc(sfmodalt2lc) # wAIC = 8064 -> 8002.06
+waicOcc(sfmodaltghm)  # wAIC = 8079 -> 8002.8
+waicOcc(sfmodaltlc)   # wAIC = 8091
+waicOcc(sfmodalt2lc)  # wAIC = 8064 -> 8002.06
+waicOcc(sfmodtempalt2lc) # wAIC = 8981.96
+waicOcc(sfmodtemplc)  # wAIC = 8981.04
 # lowest wAIC is given by full model. The spatial covariance is not properly estimated though.
 
 
@@ -171,7 +186,7 @@ summary(ppc.out)
 ### Plots ####
 
 ##### Coef plot ####
-betas <- sfmodfull$beta.samples
+betas <- sfmodtempalt2lc$beta.samples
 # plot occupancy vs predictor values for every sp
 data.frame(coef = colnames(betas),
            mean = colMeans(betas),
@@ -272,7 +287,7 @@ beet_covs <- tibble(site = colnames(beet_sp_mat)) %>% left_join(allsites_cov_db)
 beet.data <- list(y = beet_sp_mat, 
                   covs = beet_covs[,c("forest", "alt", "ghm", "Fdist")], 
                   coords = beet_covs[,c("x", "y")])
-### run JSDM model
+#### run JSDM model ####
 beetjsdmnull <- lfJSDM(formula = ~1, 
                        data = beet.data, 
                        n.samples = 2000, n.thin = 2, n.chains = 3, n.factors = 4, n.burn = 1000)
