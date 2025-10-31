@@ -28,7 +28,7 @@ commb <- read.csv("Data/beet_comm_mat.csv", row.names = 1)
 allsites_pts <- terra::vect("Data/combined_survey_pts.geojson")
 allsites_cov_db <- as.data.frame(allsites_pts)
 
-# Import temp data
+### Import temp data
 temp_data_day <- read.csv("Data/LST_2020_allsites_day.csv", 
                           col.names = c("date", "LST", "site")) %>% 
   mutate(date = mdy(date), month = month(date))
@@ -58,8 +58,9 @@ vert_covs <- mutate(vert_covs_raw,
                     fdist = standardise(log1p(lfdistance_2)),
                     tmax = standardise(max_T),
                     tmin = standardise(min_T), 
-                    tmean = standardise(mean_T)) %>% 
-  select(lc, alt, alt2, ghm, fdist, tmax, tmin, tmean, easting, northing)
+                    tmean = standardise(mean_T),
+                    tsd = standardise(sd_T)) %>% 
+  select(lc, alt, alt2, ghm, fdist, tmax, tmin, tmean, tsd, easting, northing)
 # could also standardize using decostand  
 beet_covs_raw <- data.frame(site = rownames(commb)) %>% 
   left_join(allsites_cov_db) %>% 
@@ -73,28 +74,30 @@ beet_covs <- mutate(beet_covs_raw, lc = factor(lc2, labels = c("Dense","Open")),
          fdist = standardise(log1p(lfdistance_2)),
          tmax = standardise(max_T),
          tmin = standardise(min_T), 
-         tmean = standardise(mean_T)) %>% 
-  select(lc,alt,alt2, ghm,fdist, tmax, tmin, tmean)
+         tmean = standardise(mean_T), 
+         tsd = standardise(sd_T)) %>% 
+  select(lc,alt,alt2, ghm,fdist, tmax, tmin, tmean, tsd)
 
 ##### PERMANOVA #####
 
 # Analysis to see how the different variables affect the dissimilarity across
 # sites
-permanova_comp <- fit_models(make_models(vars = c("lc", "alt", "alt2","ghm", "fdist", "tmean")), 
+permanova_comp <- fit_models(make_models(vars = c("lc", "alt", "alt2","ghm", "fdist", "tmean", "tsd")), 
                              veg_data = comm_std, env_data = vert_covs)
 select_models(permanova_comp)
 # We compared different covariate combinations, and the one with the lowest AICc
-# included land cover, altitude, and alt^2. However, there are 3 other models
+# included land cover, altitude, and alt^2. However, there are 12 other models
 # that have similar AICc. The VIF for the best model is not that high (2.35) so
-# we could ignore it.
-permanova_comp_beet <- fit_models(make_models(vars = c("lc", "alt","alt2",  "ghm", "fdist", "tmean")), 
+# we could ignore it. The second best model includes mean temp instead of
+# altitude.
+permanova_comp_beet <- fit_models(make_models(vars = c("lc", "alt","alt2",  "ghm", "fdist", "tmean", "tsd")), 
                              veg_data = commb, env_data = beet_covs)
 select_models(permanova_comp_beet)
-# In the case of beetles, all 6 top models rank similarly. The best one includes
-# altitude, ghm, and lc. THe VIF for this one is 1.98. It performs similar to 
-# the same model with lc instead of ghm, and the other variables combined with alt.
+# In the case of beetles, there are 41 models that rank similarly. The top one
+# included altitude, forest distance, and mean temp, and has a VIF of 2.95. The
+# second one includes altitude, ghm, and distance to forest, with a VIF of 1.96. 
 vert_permanova <- adonis2(comm_std~lc+tmean+alt2, data = vert_covs, method = 'bray')
-beet_permanova <- adonis2(commb~fdist+alt, data = beet_covs, method = 'bray')
+beet_permanova <- adonis2(commb~fdist+alt+tmean, data = beet_covs, method = 'bray')
 vert_permanova
 beet_permanova
 
@@ -111,7 +114,7 @@ beet_pcoa <- pcoa(beet_dissim)
 
 # Fit environ variables
 vert_envfit_pcoa <- envfit(vert_pcoa$vectors~lc+tmean+alt2, data = vert_covs)
-beet_envfit_pcoa <- envfit(beet_pcoa$vectors~alt+fdist, data = beet_covs)
+beet_envfit_pcoa <- envfit(beet_pcoa$vectors~alt+tmean+fdist, data = beet_covs)
 
 # test if there is more variability in open vs dense forest sites for vertebrates
 anova(betadisper(vert_dissim, vert_covs$lc))
@@ -123,27 +126,42 @@ plot(betadisper(vert_dissim, vert_covs$lc), hull = F, ellipse = T, col = c("dark
 anova(betadisper(beet_dissim, beet_covs$lc))
 plot(betadisper(beet_dissim, beet_covs$lc), 
      hull = F, ellipse=T, col = c("darkgreen", "goldenrod"), segments = F)
-# For beetles there is no difference in variability. F_1,70 = 0.581, p = 0.449.
+# For beetles there is no difference in variability. F_1,98 = 0.0019, p = 0.97.
 
 
 # Plot PCoA
+transp_cols <- col2rgb(c("darkgreen", "goldenrod")) |>
+  apply(2, \(x) rgb(x[1],x[2],x[3],alpha = 150, maxColorValue = 255))
+
 par(mfrow = c(1,2))
-plot(vert_pcoa$vectors[,1:2], las=1, asp = 1, xlab = "Axis 1", ylab = "Axis 2", type = 'n', main = "Vertebrates")
-ordiellipse(vert_pcoa$vectors, vert_covs$lc, draw = "polygon", col = c("darkgreen", "goldenrod"))
-points(vert_pcoa$vectors[vert_covs$lc=="Dense",1:2], pch = 16, col = "darkgreen")
-points(vert_pcoa$vectors[vert_covs$lc=="Open",1:2], pch = 17, col = "goldenrod")
+#
+plot(vert_pcoa$vectors[,1:2], las=1, asp = 1, 
+     xlab = "Axis 1", ylab = "Axis 2", 
+     type = 'n', main = "Vertebrates",
+     pty = 's')
+# ordiellipse(vert_pcoa$vectors, vert_covs$lc, draw = "polygon", col = c("darkgreen", "goldenrod"))
+points(vert_pcoa$vectors[vert_covs$lc=="Dense",1:2], pch = 16, col = transp_cols[1])
+points(vert_pcoa$vectors[vert_covs$lc=="Open",1:2], pch = 17, col = transp_cols[2])
 ordisurf(vert_pcoa$vectors, vert_covs_raw$mean_T-273.15, add = T, col = "gray50")
-plot(vert_envfit_pcoa, labels = list(factors = c("Dense", "Open"),vectors = c("tmean", "Alt^2")), bg='white', col = "gray10", p.max = 0.05)
+plot(vert_envfit_pcoa, 
+     labels = list(factors = c("Dense", "Open"),
+                   vectors = c("Temp", expression(Alt^2))), 
+     bg=rgb(1,1,1,0.5), col = "gray30", p.max = 0.05, )
 # plot(vert_envfit_pcoa, labels = list(factors = c("Dense", "Open"), vectors = c("Alt", "Alt^2", "gHM", "Forest dist")), bg='white', col = "gray10")
 
 # PCoA for beetles
-plot(beet_pcoa$vectors[,1:2], type = 'n', las=1, asp = 1, xlab = "Axis 1", ylab = "Axis 2", main = "Beetles")
-ordiellipse(beet_pcoa$vectors, beet_covs$lc, draw = "polygon", col = c("darkgreen", "goldenrod"))
-points(beet_pcoa$vectors[beet_covs$lc=="Dense",1:2], pch = 16, col = "darkgreen")
-points(beet_pcoa$vectors[beet_covs$lc=="Open",1:2], pch = 17, col = "goldenrod")
+plot(beet_pcoa$vectors[,1:2], 
+     type = 'n', las=1, asp = 1, xlab = "Axis 1", ylab = "Axis 2", main = "Beetles", 
+     pty = 's')
+# ordiellipse(beet_pcoa$vectors, beet_covs$lc, draw = "polygon", col = c("darkgreen", "goldenrod"))
+# points(beet_pcoa$vectors[beet_covs$lc=="Dense",1:2], pch = 16, col = "darkgreen")
+# points(beet_pcoa$vectors[beet_covs$lc=="Open",1:2], pch = 17, col = "goldenrod")
+points(beet_pcoa$vectors, pch = 16, col = rgb(0,0,0,0.5))
 ordisurf(beet_pcoa$vectors, beet_covs_raw$mean_T-273.15, add = T, col = "gray50")
-plot(beet_envfit_pcoa, labels = list(#factors = c("Dense", "Open"), 
-     vectors = c("fdist", "alt")), bg='white', col = "gray10")
+plot(beet_envfit_pcoa, 
+     labels = list(#factors = c("Dense", "Open"), 
+       vectors = c("For.dist.", "Alt", "Temp")), 
+     bg=rgb(1,1,1,0.5), col = "gray30")
 par(mfrow = c(1,1))
 
 ##### NMDS approach #####
@@ -175,19 +193,68 @@ plot(beet_envfit_nmds, col = 'blue', cex = 0.8, p.max = 0.05)
 plot(specnumber(comm)~vert_covs$alt)
 plot(specnumber(comm)~vert_covs$ghm)
 plot(specnumber(comm)~vert_covs$fdist)
+plot(specnumber(comm)~vert_covs$tmean)
+plot(specnumber(comm)~vert_covs$tsd)
 
 plot(specnumber(commb)~beet_covs$alt)
 plot(specnumber(commb)~beet_covs$ghm)
 plot(specnumber(commb)~beet_covs$fdist)
+plot(specnumber(commb)~beet_covs$tmean)
+plot(specnumber(commb)~beet_covs$tsd, col = beet_covs$lc, pch = 16)
 
 # plot diversity (Shannon) against covariates individually
 plot(diversity(comm)~vert_covs$alt)
 plot(diversity(comm)~vert_covs$ghm)
 plot(diversity(comm)~vert_covs$fdist)
+plot(diversity(comm)~vert_covs$tmean)
+plot(diversity(comm)~vert_covs$tsd)
 # beetles
 plot(diversity(commb)~beet_covs$alt)
 plot(diversity(commb)~beet_covs$ghm)
 plot(diversity(commb)~beet_covs$fdist)
+plot(diversity(commb)~beet_covs$tmean)
+plot(diversity(commb)~beet_covs$tsd)
+#### diversity and richness ggplots ####
+p1 <- data.frame(n = specnumber(comm),vert_covs_raw) %>% 
+  ggplot(aes(mean_T-273.15, n))+
+  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5))+
+  labs(x = expression(paste("Mean temperature (",degree*C, ")")), y = "Species richness")+
+  theme_pubr()
+p2 <- data.frame(n = diversity(comm),vert_covs_raw) %>% 
+  ggplot(aes(mean_T-273.15, n))+
+  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5))+
+  labs(x = expression(paste("Mean temperature (",degree*C, ")")), y = "Diversity")+
+  theme_pubr()
+p3 <- data.frame(n = specnumber(comm),vert_covs_raw) %>% 
+  ggplot(aes(sd_T, n))+
+  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5))+
+  labs(x = expression(paste("St.dev. temperature (",degree*C, ")")), y = "Species richness")+
+  theme_pubr()
+p4 <- data.frame(n = diversity(comm),vert_covs_raw) %>% 
+  ggplot(aes(sd_T, n))+
+  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5))+
+  labs(x = expression(paste("St.dev. temperature (",degree*C, ")")), y = "Diversity")+
+  theme_pubr()
+p5 <- data.frame(n = specnumber(commb),beet_covs_raw) %>% 
+  ggplot(aes(mean_T-273.15, n))+
+  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5))+
+  labs(x = expression(paste("Mean temperature (",degree*C, ")")), y = "Species richness")+
+  theme_pubr()
+p6 <- data.frame(n = diversity(commb),beet_covs_raw) %>% 
+  ggplot(aes(mean_T-273.15, n))+
+  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5))+
+  labs(x = expression(paste("Mean temperature (",degree*C, ")")), y = "Diversity")+
+  theme_pubr()
+p7 <- data.frame(n = specnumber(commb),beet_covs_raw) %>% 
+  ggplot(aes(sd_T, n))+
+  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5))+
+  labs(x = expression(paste("St.dev. temperature (",degree*C, ")")), y = "Species richness")+
+  theme_pubr()
+p8 <- data.frame(n = diversity(commb),beet_covs_raw) %>% 
+  ggplot(aes(sd_T, n))+
+  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5))+
+  labs(x = expression(paste("St.dev. temperature (",degree*C, ")")), y = "Diversity")+
+  theme_pubr()
 
 ##### Vert richness #####
 vert_gam_db <- data.frame(s = diversity(comm), n = specnumber(comm), vert_covs)
