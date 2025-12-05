@@ -68,7 +68,7 @@ y_df <- filter(DAT, !grepl("uid", common_name)) %>%
 nsp <- length(unique(y_df$common_name))
 nst <- length(unique(y_df$site))
 nocc <- max(y_df$smplmon)
-nsp * nst * nocc
+nsp * nst * nocc # 24080
 mody <- array(data = as.numeric(y_df$n > 0), dim = c(nsp, nst, nocc),
               dimnames = list(species = unique(y_df$common_name),
                               sites = unique(y_df$site), occ = 1:nocc))
@@ -77,15 +77,15 @@ mody <- mody[sp_order, , ]
 covs_df <- distinct(y_df, site) %>%
   left_join(allsites_cov_db) %>%
   left_join(daytemp_sum) %>%
-  select(site, easting, northing, ghm1, lc2, alt1,
+  select(site, easting, northing, ghm1, lc2, alt1, lfdistance_2,
          mean_T, sd_T, treecov_gfw_100, pasture_gfw_prop) %>%
-  rename(x = easting, y = northing, forest = lc2, alt = alt1,
+  rename(x = easting, y = northing, forest = lc2, fdist = lfdistance_2, alt = alt1,
          ghm = ghm1, treecov = treecov_gfw_100, pasture = pasture_gfw_prop) %>%
   mutate(forest = factor(forest, labels = c("Dense", "Open")))
 moddata <- list(y = mody,
-                occ.covs = covs_df[, c("forest", "alt", "ghm", "mean_T",
+                occ.covs = covs_df[, c("forest", "fdist", "alt", "ghm", "mean_T",
                                        "sd_T", "treecov", "pasture")],
-                          # det.covs = covs_df[,"site"],
+                # det.covs = covs_df[,"site"],
                 coords = as.matrix(covs_df[, c("x", "y")]))
 
 # Priors
@@ -103,7 +103,7 @@ inits_list <- list(beta.comm = 0, alpha.comm = 0, # Community-level occurrence (
   z = apply(mody, c(1, 2), max, na.rm = TRUE)
 )
 
-
+moddata$occ.covs
 #### Run models ####
 # Null model, intercept only
 sfmod_null <- sfMsPGOcc(
@@ -121,10 +121,10 @@ sfmod_null <- sfMsPGOcc(
 )
 summary(sfmod_null)
 waicOcc(sfmod_null)
-# Null model wAIC: 9056.26 The convergence for the spatial covariance terms is
-# quite poor (rhats are 1.06, 3.05, 2.51). Maybe try longer chains (6000->30000)
+# Null model wAIC: 8053.92 The convergence for the spatial covariance terms is
+# quite poor (rhats 1.10, 1.29, 3.78). Maybe try longer chains (6000->30000)
 # with more burn (4000->10000) thinning (2->50), or more factors (3->4)
-sfmod_null_updated <- update(sfmod_null,
+sfmod_null_ukpdated <- update(sfmod_null,
   n.factors = 4, n.batch = 1200, n.burn = 10000, n.thin = 50
 )
 summary(sfmod_null_updated)
@@ -135,36 +135,50 @@ sfmod_null_updated$k.fold.deviance
 sfmod_null$k.fold.deviance
 # there isn't a huge difference in the k-fold deviance, some higher, some lower
 waicOcc(sfmod_null_updated)
-# 8026.6, much lower than the non-updated model
+# 8030.48, much lower than the non-updated model
 summary(ppcOcc(sfmod_null_updated, "freeman-tukey", group = 1))
 # the model seems to have low Bayesian p-values for common spp
 # (e.g. p = 0 for agoutis)
 
 # Create alternative models with covars
 sfmod_full <- update(sfmod_null,
-  occ.formula = ~treecov + pasture + ghm + scale(mean_T),
+  occ.formula = ~treecov + pasture + ghm + scale(mean_T) + log1p(fdist),
   n.factors = 5, n.batch = 600, n.burn = 5000, n.thin = 25
 )
-# the R hat is still very high for the spatial covariance latent factors, with
-# very limited eff. sample size (ESS)
-sfmodalt <- update(sfmod_full, occ.formula = ~scale(alt))
-sfmodalt2 <- update(sfmod_full, occ.formula = ~scale(alt) + I(scale(alt)^2))
-sfmodalt2ghm <- update(sfmod_full,
-                       occ.formula = ~scale(alt) + I(scale(alt)^2) + scale(ghm))
-# summary: better Rhat values than the full model.
-sfmodaltghm <- update(sfmod_full, occ.formula = ~scale(alt) + scale(ghm))
-sfmodaltlc <- update(sfmod_full, occ.formula = ~forest + scale(alt))
-sfmodalt2lc <- update(sfmod_full,
-  occ.formula = ~forest + scale(alt) + I(scale(alt)^2)
-)
-sfmodtempalt2lc <- update(sfmod_full,
-  occ.formula = ~scale(mean_T) + I(scale(alt)^2) + forest
-)
-sfmodtemplc <- update(sfmod_full, occ.formula = ~scale(mean_T) + forest)
+summary(sfmod_full)
+# there is still limited sample size for the spatial covariance latent factors
+sfmod_disttemp <- update(sfmod_full,
+                         occ.formula = ~ scale(mean_T) + log1p(fdist))
+sfmod_ghmtemp <- update(sfmod_full,
+                        occ.formula = ~ scale(mean_T) + ghm)
+sfmod_temp <- update(sfmod_full, occ.formula = ~ scale(mean_T))
+sfmod_pasttemp <- update(sfmod_full, occ.formula = ~ pasture + scale(mean_T))
+# sfmod_alt <- update(sfmod_full, occ.formula = ~scale(alt))
+# sfmod_alt2 <- update(sfmod_full, occ.formula = ~scale(alt) + I(scale(alt)^2))
+# sfmod_alt2ghm <- update(sfmod_full,
+#                         occ.formula = ~scale(alt) + I(scale(alt)^2) + scale(ghm))
+# # summary: better Rhat values than the full model.
+# sfmodaltghm <- update(sfmod_full, occ.formula = ~scale(alt) + scale(ghm))
+# sfmodaltlc <- update(sfmod_full, occ.formula = ~forest + scale(alt))
+# sfmodalt2lc <- update(sfmod_full,
+#   occ.formula = ~forest + scale(alt) + I(scale(alt)^2)
+# )
+# sfmodtempalt2lc <- update(sfmod_full,
+#   occ.formula = ~scale(mean_T) + I(scale(alt)^2) + forest
+# )
+# sfmodtemplc <- update(sfmod_full, occ.formula = ~scale(mean_T) + forest)
 
 
 # Compare models based on wAIC
-waicOcc(sfmod_full)    # waic = 8062 -> 7995.03 -> 8986.25 w/ temp
+waicOcc(sfmod_null)    # waic of 8053.92
+waicOcc(sfmod_full)    # 7994.87
+waicOcc(sfmod_disttemp) # 7990.27
+waicOcc(sfmod_ghmtemp) # 7985.22
+waicOcc(sfmod_temp)    # 7984.75
+waicOcc(sfmod_pasttemp)    # 7988.01
+#' The model with only temperature and the one with ghm and
+#' temp are comparable, although the one with only temperature
+#' had the lowest wAIC
 waicOcc(sfmodalt)     # wAIC = 8079
 waicOcc(sfmodalt2)    # wAIC = 8058 -> 7995.71
 waicOcc(sfmodalt2ghm) # wAIC = 8054 -> 7997.57
@@ -213,18 +227,19 @@ waicOcc(basemodalt2) # 8220, among the worst models
 
 # the model with the species correlations has lower wAIC,
 # and therefore a better fit
+bestvertmod <- sfmod_temp
 # diagnostics
-ppc_out <- ppcOcc(sfmod_full, fit.stat = "freeman-tukey", group = 1)
+ppc_out <- ppcOcc(bestvertmod, fit.stat = "freeman-tukey", group = 1)
 summary(ppc_out)
-# The full model's Bayesian p value is 0.238, so not terrible,
+# The full model's Bayesian p value is 0.246, so not terrible,
 # but rather low (0.5 is good, <0.1 or >0.9 is poor). The fit is
-# terrible for agoutis (p=0), and p<0.1 for collared peccaries,
-# common opossums, rabbits, curassows, pumas, pacas, and coatis.
+# terrible for agoutis (p=0), and p<0.1 for collared peccaries, tayras,
+# curassows, pumas, pacas, and coatis, all of which are rather common.
 
 ### Plots ####
 
 ##### Coef plot ####
-betas <- sfmodtempalt2lc$beta.samples
+betas <- bestvertmod$beta.samples
 # plot occupancy vs predictor values for every sp
 data.frame(coef = colnames(betas),
            mean = colMeans(betas),
@@ -242,10 +257,8 @@ data.frame(coef = colnames(betas),
 ##### Predicted occupancy ####
 #We can use the model predictions to see how the expected richness compares
 #against observed richness
-modpreds <- predict(sfmod_full,
-  data.frame(int = 1, alt = scale(moddata$occ.covs$alt),
-             alt2 = scale(moddata$occ.covs$alt)^2,
-             ghm = scale(moddata$occ.covs$ghm)),
+modpreds <- predict(bestvertmod,
+  data.frame(int = 1, temp = scale(moddata$occ.covs$mean_T)),
   moddata$coords, type = "occupancy"
 )
 predrich <- apply(modpreds$z.0.samples, c(1, 3), sum) |>
@@ -262,9 +275,9 @@ data.frame(site = rownames(comm), nobs = specnumber(comm)) %>%
 # generally model predicts greater than observed, with the greatest difference
 # at the lower end. Is this evidence of species missing, or just poor model fit?
 
-# Plot predicted occupancy vs alt.
-cent_alt <- attr(scale(moddata$occ.covs$alt), "scaled:center")
-scal_alt <- attr(scale(moddata$occ.covs$alt), "scaled:scale")
+# # Plot predicted occupancy vs alt.
+# cent_alt <- attr(scale(moddata$occ.covs$alt), "scaled:center")
+# scal_alt <- attr(scale(moddata$occ.covs$alt), "scaled:scale")
 
 # newalts <- seq(min(moddata$occ.covs$alt), max(moddata$occ.covs$alt), length.out=100)
 newalts <- c(100, 1200, 2000)
@@ -322,13 +335,13 @@ filter(preddb, sp %in% c("tinamou_great", "jaguar", "ocelot",
 
 
 #### Pitfall data ####
-DATb <- read.csv("Data/dung_beetles_prc.csv") %>%
+dat_beet <- read.csv("Data/dung_beetles_prc.csv") %>%
   select(-Date) %>%
   # join traps from same station
   summarise(.by = Plot, across(where(is.numeric), sum)) %>%
   inner_join(select(allsites_cov_db, site), by = join_by("Plot" == "site"))
 # create sp matrix
-beet_sp_mat <- DATb %>%
+beet_sp_mat <- dat_beet %>%
   column_to_rownames("Plot") %>%
   mutate(across(seq_len(ncol(.)), \(x) as.numeric(x > 0))) %>% # make binary
   select(where(\(x) sum(x) > 3)) %>% # only species present at multiple sites
@@ -339,49 +352,63 @@ beet_sp_mat <- DATb %>%
 # create env matrix. This approach does not allow for factors like land cover.
 beet_covs <- tibble(site = colnames(beet_sp_mat)) %>%
   left_join(allsites_cov_db) %>%
-  select(site, easting, northing, ghm1, lc2, alt1, lfdistance_2) %>%
+  left_join(daytemp_sum) %>%
+  select(site, easting, northing, ghm1, lc2, alt1, lfdistance_2,
+         mean_T, sd_T, treecov_gfw_100, pasture_gfw_prop) %>%
   mutate(lc2 = lc2 == 10) %>%
   rename(x = easting, y = northing, alt = alt1, ghm = ghm1,
-         forest = lc2, Fdist = lfdistance_2) %>%
+         forest = lc2, fdist = lfdistance_2, treecov = treecov_gfw_100,
+         pasture = pasture_gfw_prop, tmean = mean_T) %>%
   column_to_rownames("site") %>%
   as.matrix()
 
 beet_data <- list(y = beet_sp_mat,
-                  covs = beet_covs[, c("forest", "alt", "ghm", "Fdist")],
+                  covs = beet_covs[, c("forest", "alt", "ghm", "fdist",
+                                       "treecov", "pasture", "tmean")],
                   coords = beet_covs[, c("x", "y")])
 #### run JSDM model ####
-beetjsdmnull <- lfJSDM(formula = ~1,
-                       data = beet_data,
-                       n.samples = 2000, n.thin = 2, n.chains = 3,
-                       n.factors = 4, n.burn = 1000)
-beetjsdmfull <- lfJSDM(formula = ~forest + scale(alt) + I(scale(alt)^2) +
-                         scale(ghm),
-                       data = beet_data,
-                       n.samples = 2000, n.thin = 2, n.chains = 3,
-                       n.factors = 4, n.burn = 1000)
-sapply(list(beetjsdmfull, beetjsdmnull), waicOcc)
-summary(beetjsdmfull, "community")
-plot(beetjsdmfull, "beta.comm")
+beet_jsdm_null <- lfJSDM(formula = ~1,
+                         data = beet_data,
+                         n.samples = 2000, n.thin = 2, n.chains = 3,
+                         n.factors = 4, n.burn = 1000)
+beet_jsdm_full <- lfJSDM(formula = ~ ghm + log1p(fdist) + treecov +
+                           pasture + scale(tmean),
+                         data = beet_data,
+                         n.samples = 2000, n.thin = 2, n.chains = 3,
+                         n.factors = 4, n.burn = 1000)
+sapply(list(beet_jsdm_null, beet_jsdm_full), waicOcc)
+#' The full model has much lower wAIC (2414 vs 2381)
+summary(beet_jsdm_full, "community")
+plot(beet_jsdm_full, "beta.comm")
 # The full model has lower wAIC than the null model. The model seems to perform
 # better than the one for vertebrates. The overall community occupancy is
-# positively linked with altitude and gHM, and negatively influenced by alt^2
-# and distance to forest. The effect of forest is the least clear, likely due to
-# collinearity. ESSs are low, run for longer
-beetjsdmalt <- update(beetjsdmnull, formula = ~scale(alt))
-beetjsdmalt2 <- update(beetjsdmnull, formula = ~scale(alt) + I(scale(alt)^2))
-beetjsdmalt2ghm <- update(beetjsdmnull,
-                          formula = ~scale(alt) + I(scale(alt)^2) + scale(ghm))
-beetjsdmalt2lc <- update(beetjsdmnull,
-                         formula = ~forest + scale(alt) + I(scale(alt)^2))
-beetjsdmaltlc <- update(beetjsdmnull, formula = ~forest + scale(alt))
-beetjsdmaltghm <- update(beetjsdmnull, formula = ~scale(alt) + scale(ghm))
+# negatively linked with gHM, distance to forest, tree cover, pasture,
+# and temperature
+beet_jsdm_disttemp <- update(beet_jsdm_full, formula = ~log1p(fdist) + scale(tmean))
+beet_jsdm_temp <- update(beet_jsdm_full, formula = ~scale(tmean))
+beet_jsdm_ghmtemp <- update(beet_jsdm_full, formula = ~ghm + scale(tmean))
+beet_jsdm_pasttemp <- update(beet_jsdm_full, formula = ~pasture + scale(tmean))
+beet_jsdm_ghm <- update(beet_jsdm_full, formula = ~ghm)
 
-sapply(list(beetjsdmalt, beetjsdmalt2, beetjsdmfull, beetjsdmalt2lc,
-            beetjsdmaltlc, beetjsdmaltghm, beetjsdmalt2ghm), waicOcc)
-# The full has the lowest wAIC, but it is comparable to the
-# mode model with alt, alt^2, and ghm, and the one with alt and lc.
-summary(beetjsdmalt2ghm, "community")
-summary(beetjsdmaltlc, "community")
+sapply(list(beet_jsdm_full, beet_jsdm_disttemp, beet_jsdm_temp,
+            beet_jsdm_ghmtemp, beet_jsdm_ghm, beet_jsdm_pasttemp), waicOcc)
+# The model with ghm and temperature has the lowest AIC (2360)
+
+# beetjsdmalt <- update(beetjsdmnull, formula = ~scale(alt))
+# beetjsdmalt2 <- update(beetjsdmnull, formula = ~scale(alt) + I(scale(alt)^2))
+# beetjsdmalt2ghm <- update(beetjsdmnull,
+#                           formula = ~scale(alt) + I(scale(alt)^2) + scale(ghm))
+# beetjsdmalt2lc <- update(beetjsdmnull,
+#                          formula = ~forest + scale(alt) + I(scale(alt)^2))
+# beetjsdmaltlc <- update(beetjsdmnull, formula = ~forest + scale(alt))
+# beetjsdmaltghm <- update(beetjsdmnull, formula = ~scale(alt) + scale(ghm))
+
+# sapply(list(beetjsdmalt, beetjsdmalt2, beetjsdmfull, beetjsdmalt2lc,
+#             beetjsdmaltlc, beetjsdmaltghm, beetjsdmalt2ghm), waicOcc)
+# # The full has the lowest wAIC, but it is comparable to the
+# # mode model with alt, alt^2, and ghm, and the one with alt and lc.
+# summary(beetjsdmalt2ghm, "community")
+# summary(beetjsdmaltlc, "community")
 
 ### Models with spatial covars
 sf_beet_jsdm_null <- sfJSDM(~1,
@@ -394,32 +421,40 @@ sf_beet_jsdm_null <- sfJSDM(~1,
 )
 
 sf_beet_jsdm_full <- update(sf_beet_jsdm_null,
-                            formula = ~forest + scale(alt) +
-                              I(scale(alt)^2) + scale(ghm))
-sapply(list(sf_beet_jsdm_full, sf_beet_jsdm_null), waicOcc)
-# Here too the full model performs better
+                            formula = ~ghm + log1p(fdist) + treecov +
+                              pasture + scale(tmean))
+sf_beet_jsdm_disttemp <- update(sf_beet_jsdm_full,
+  formula = ~log1p(fdist) + scale(tmean)
+)
+sf_beet_jsdm_ghmtemp <- update(sf_beet_jsdm_full, formula = ~ghm + scale(tmean))
+sapply(list(sf_beet_jsdm_full, sf_beet_jsdm_null,
+            sf_beet_jsdm_ghmtemp, sf_beet_jsdm_disttemp), waicOcc)
+# Here too the best model is the one with temperature and ghm (2433),
+# but the model with no spatial covariates has still lower wAIC (2360)
 
-sf_beet_jsdm_alt2 <- update(sf_beet_jsdm_full,
-                            formula = ~scale(alt) + I(scale(alt)^2))
-sf_beet_jsdm_alt <- update(sf_beet_jsdm_full, formula = ~scale(alt))
-sf_beet_jsdm_altghm <- update(sf_beet_jsdm_full,
-                              formula = ~scale(alt) + scale(ghm))
-sf_beet_jsdm_alt2ghm <- update(sf_beet_jsdm_full,
-                               formula = ~scale(alt) + I(scale(alt)^2)+scale(ghm))
-sf_beet_jsdm_altlc <- update(sf_beet_jsdm_full, formula = ~forest+scale(alt))
-sf_beet_jsdm_alt2lc <- update(sf_beet_jsdm_full,
-                              formula = ~forest + scale(alt) + I(scale(alt)^2))
-sf_beet_jsdm_altlcghm <- update(sf_beet_jsdm_full,
-                                formula = ~forest + scale(alt) + scale(ghm))
+###
+# sf_beet_jsdm_alt2 <- update(sf_beet_jsdm_full,
+#                             formula = ~scale(alt) + I(scale(alt)^2))
+# sf_beet_jsdm_alt <- update(sf_beet_jsdm_full, formula = ~scale(alt))
+# sf_beet_jsdm_altghm <- update(sf_beet_jsdm_full,
+#                               formula = ~scale(alt) + scale(ghm))
+# sf_beet_jsdm_alt2ghm <- update(sf_beet_jsdm_full,
+#                                formula = ~scale(alt) + I(scale(alt)^2)+scale(ghm))
+# sf_beet_jsdm_altlc <- update(sf_beet_jsdm_full, formula = ~forest+scale(alt))
+# sf_beet_jsdm_alt2lc <- update(sf_beet_jsdm_full,
+#                               formula = ~forest + scale(alt) + I(scale(alt)^2))
+# sf_beet_jsdm_altlcghm <- update(sf_beet_jsdm_full,
+#                                 formula = ~forest + scale(alt) + scale(ghm))
 
-# AIC ranking
-sapply(list(sf_beet_jsdm_full, sf_beet_jsdm_altghm,
-            sf_beet_jsdm_altlcghm, sf_beet_jsdm_alt2ghm,
-            sf_beet_jsdm_alt2lc), waicOcc)
-# the model with the lowest AIC is the full model (2402). All
-# these models, however, have higher wAIC than the model with no spatial
-# covariates (wAIC = 2376)
-rm(sfbeetJSDMalt, sf_beet_jsdm_alt2, sfbeetJSDMaltlc)
+# # AIC ranking
+# sapply(list(sf_beet_jsdm_full, sf_beet_jsdm_altghm,
+#             sf_beet_jsdm_altlcghm, sf_beet_jsdm_alt2ghm,
+#             sf_beet_jsdm_alt2lc), waicOcc)
+# # the model with the lowest AIC is the full model (2402). All
+# # these models, however, have higher wAIC than the model with no spatial
+# # covariates (wAIC = 2376)
+# rm(sfbeetJSDMalt, sf_beet_jsdm_alt2, sfbeetJSDMaltlc)
+###
 
 ##### occupancy model with bait as detection covar #####
 beet_sp_mat <- read.csv("Data/dung_beetles_prc.csv") %>%
@@ -480,19 +515,20 @@ lfmodbeetfull <- update(lfmodbeetnull,
 
 
 #### Plots ####
+bestbeetmod <- beet_jsdm_ghmtemp
 ##### Parameter plots ####
-beetbetas <- beetjsdmfull$beta.samples
+beetbetas <- bestbeetmod$beta.samples
 data.frame(coef = colnames(beetbetas),
            mean = colMeans(beetbetas),
            lq = apply(beetbetas,2,quantile, prob = 0.025),
-           uq = apply(beetbetas,2,quantile, prob = 0.975)
-) %>% separate_wider_delim(coef, "-", names = c("parameter", "species")) %>% 
+           uq = apply(beetbetas,2,quantile, prob = 0.975)) %>%
+  separate_wider_delim(coef, "-", names = c("parameter", "species")) %>%
   # filter(parameter!="(Intercept)") %>% 
-  mutate(parameter = gsub("scale(|)", "", parameter)) %>% 
-  ggplot(aes(y = fct_reorder(species,mean, first), x = mean))+
-  geom_vline(xintercept = 0, linetype=2)+
-  geom_linerange(aes(xmin = lq, xmax = uq))+
-  geom_point()+
+  mutate(parameter = gsub("scale(|)", "", parameter)) %>%
+  ggplot(aes(y = fct_reorder(species, mean, first), x = mean)) +
+  geom_vline(xintercept = 0, linetype = 2) +
+  geom_linerange(aes(xmin = lq, xmax = uq)) +
+  geom_point() +
   facet_wrap(~parameter)
 
 #####--- Predicted occupancy ####
