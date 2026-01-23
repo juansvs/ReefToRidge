@@ -43,14 +43,61 @@ comm_std <- comm/effort
 # Calculate disimilarities
 vert_dissim <- vegdist(comm_std)
 beet_dissim <- vegdist(commb)
+# distance with the Jaccard turnover index
+vert_dissim_jac <- vegdist(comm_std, "jaccard", binary = TRUE)
+beet_dissim_jac <- vegdist(commb, "jaccard", binary = TRUE)
+# distance with the Simpson nestedness index
+# 1. create matrix
+vert_dmat_sim <- outer(seq.int(nrow(comm)), seq.int(nrow(comm)))
+for(i in seq.int(nrow(comm))) {
+  for(j in seq.int(nrow(comm))) {
+    A <- comm[i, ] > 0
+    B <- comm[j, ] > 0
+    vert_dmat_sim[i, j] <- sum(A + B == 2)/min(sum(A), sum(B))
+  }
+}
+# repeat for beetles
+beet_dmat_sim <- outer(seq.int(nrow(commb)), seq.int(nrow(commb)))
+for(i in seq.int(nrow(commb))) {
+  for(j in seq.int(nrow(commb))) {
+    A <- commb[i, ] > 0
+    B <- commb[j, ] > 0
+    beet_dmat_sim[i, j] <- sum(A + B == 2)/min(sum(A), sum(B))
+  }
+}
+# transform to dist objects
+vert_dmat_sim <- as.dist(vert_dmat_sim)
+beet_dmat_sim <- as.dist(beet_dmat_sim)
 
-vert_covs_raw <- data.frame(site = rownames(comm)) %>% 
-  left_join(allsites_cov_db) %>% 
-  left_join(daytemp_sum) %>% 
-  select(site, alt1, lc2, ghm1, lfdistance_2, max_T, min_T, mean_T, sd_T, easting, northing) 
 
-vert_covs <- mutate(vert_covs_raw, 
-                    lc = factor(lc2, labels = c("Dense","Open")),
+# covariates
+vert_covs_raw <- data.frame(site = rownames(comm)) %>%
+  left_join(allsites_cov_db) %>%
+  left_join(daytemp_sum) %>%
+  select(site, alt1, lc2, ghm1, lfdistance_2, max_T, min_T, mean_T,
+         sd_T, easting, northing, treecov_gfw_100, pasture_gfw_prop) 
+
+vert_covs <- mutate(vert_covs_raw,
+                    lc = factor(lc2, labels = c("Dense", "Open")),
+                    alt = standardise(alt1),
+                    alt2 = standardise(alt1)^2,
+                    ghm = ghm1,
+                    fdist = log1p(lfdistance_2),
+                    tmax = standardise(max_T),
+                    tmin = standardise(min_T),
+                    tmean = standardise(mean_T),
+                    tsd = standardise(sd_T),
+                    treecov = treecov_gfw_100,
+                    pasture = pasture_gfw_prop) %>%
+  select(lc, alt, alt2, ghm, fdist, tmax, tmin, tmean,
+         tsd, treecov, pasture, easting, northing)
+# could also standardize using decostand
+beet_covs_raw <- data.frame(site = rownames(commb)) %>%
+  left_join(allsites_cov_db) %>%
+  left_join(daytemp_sum) %>%
+  select(site, alt1, lc2, ghm1, lfdistance_2, max_T, min_T,
+         mean_T, sd_T, treecov_gfw_100, pasture_gfw_prop)
+beet_covs <- mutate(beet_covs_raw, lc = factor(lc2, labels = c("Dense", "Open")),
                     alt = standardise(alt1),
                     alt2 = standardise(alt1)^2,
                     # temp = scale(temp_mean1),
@@ -98,12 +145,53 @@ select_models(permanova_comp_beet)
 # second one includes altitude, ghm, and distance to forest, with a VIF of 1.96. 
 vert_permanova <- adonis2(comm_std~lc+tmean+alt2, data = vert_covs, method = 'bray')
 beet_permanova <- adonis2(commb~fdist+alt+tmean, data = beet_covs, method = 'bray')
+### Same but using Jaccard binary index
+# doing the same but removing some covariates (lc and altitude)
+permanova_comp_jac <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture"),
+                                          k = 5), 
+                              com_data = vert_dissim_jac, env_data = vert_covs)
+select_models(permanova_comp_jac)
+
+permanova_comp_beet_jac <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture")), 
+                                  com_data = beet_dissim_jac, env_data = beet_covs)
+select_models(permanova_comp_beet_jac)
+
+### Same but using Simpson binary index
+permanova_comp_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture"),
+                                             k = 5), 
+                                 com_data = vert_dmat_sim, env_data = vert_covs)
+select_models(permanova_comp_sim)
+
+permanova_comp_beet_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture")), 
+                                      com_data = beet_dmat_sim, env_data = beet_covs)
+select_models(permanova_comp_beet_sim)
+
+
+
+vert_permanova <- adonis2(comm_std ~ fdist + tmean + ghm, data = vert_covs, method = 'bray', by = 'terms')
+beet_permanova <- adonis2(commb ~ fdist + tmean, data = beet_covs, method = 'bray', by = 'terms')
 vert_permanova
 beet_permanova
 
-# These results suggest that differences in species composition for vertebrates
-# are influenced mostly by differences in altitude and land cover, with some
-# smaller effect of disturbance.
+# using jaccard index of turnover
+vert_permanova_jac <- adonis2(vert_dissim_jac ~ fdist + tmean + ghm, data = vert_covs, by = 'terms')
+beet_permanova_jac <- adonis2(beet_dissim_jac ~ fdist + tmean, data = beet_covs, by = 'terms')
+vert_permanova_jac
+beet_permanova_jac
+
+# using Simpson index of nestedness
+vert_permanova_sim <- adonis2(vert_dmat_sim ~ fdist + tmean + ghm,
+                              data = vert_covs, by = 'terms')
+beet_permanova_sim <- adonis2(beet_dmat_sim ~ fdist + tmean,
+                              data = beet_covs, by = 'terms')
+vert_permanova_sim
+beet_permanova_sim
+
+# These results suggest that differences in species turnover for vertebrates are
+# influenced mostly by differences in temperature and distance to forest, with
+# some smaller effect of disturbance. These variables however explain only a
+# small proportion of the variance. The covariates do not seem to affect
+# nestedness at all.
 
 
 ##### PERMANOVA viz #####
@@ -112,9 +200,21 @@ beet_permanova
 vert_pcoa <- pcoa(vert_dissim)
 beet_pcoa <- pcoa(beet_dissim)
 
+vert_pcoa_jac <- pcoa(vert_dissim_jac)
+beet_pcoa_jac <- pcoa(beet_dissim_jac)
+
+vert_pcoa_sim <- pcoa(vert_dmat_sim)
+beet_pcoa_sim <- pcoa(beet_dmat_sim)
+
 # Fit environ variables
-vert_envfit_pcoa <- envfit(vert_pcoa$vectors~lc+tmean+alt2, data = vert_covs)
-beet_envfit_pcoa <- envfit(beet_pcoa$vectors~alt+tmean+fdist, data = beet_covs)
+vert_envfit_pcoa <- envfit(vert_pcoa$vectors~tmean+fdist + ghm, data = vert_covs)
+beet_envfit_pcoa <- envfit(beet_pcoa$vectors~tmean+fdist, data = beet_covs)
+
+vert_envfit_pcoa_jac <- envfit(vert_pcoa_jac$vectors ~ tmean + fdist + ghm, data = vert_covs)
+beet_envfit_pcoa_jac <- envfit(beet_pcoa_jac$vectors~ tmean + fdist, data = beet_covs)
+
+vert_envfit_pcoa_sim <- envfit(vert_pcoa_sim$vectors ~ tmean + fdist + ghm, data = vert_covs)
+beet_envfit_pcoa_sim <- envfit(beet_pcoa_sim$vectors~ tmean + fdist, data = beet_covs)
 
 # test if there is more variability in open vs dense forest sites for vertebrates
 anova(betadisper(vert_dissim, vert_covs$lc))
@@ -163,6 +263,55 @@ plot(beet_envfit_pcoa,
        vectors = c("For.dist.", "Alt", "Temp")), 
      bg=rgb(1,1,1,0.5), col = "gray30")
 par(mfrow = c(1,1))
+# 2x2 plot with result of Jaccard and Simpson dissimilarity indices
+par(mfrow = c(2,2), mar = c(3, 3, 1, 1))
+###
+plot(vert_pcoa_jac$vectors[, 1:2], las = 1, asp = 1,
+     xlab = "Axis 1", ylab = "Axis 2", type = "n",
+     main = "Vertebrates")
+points(vert_pcoa_jac$vectors, pch = 21, bg = 'turquoise')
+ordisurf(vert_pcoa_jac$vectors, vert_covs_raw$mean_T-273.15,
+         add = T, col = "gray50")
+plot(vert_envfit_pcoa_jac,
+     labels = list(vectors = c("Temp", "F dist", "gHM")),
+     bg = rgb(1, 1, 1, 0.5), col = "gray30", p.max = 0.05)
+mtext("a", side = 2, line = 2, padj = -8,  las = 2, font = 2)
+
+# PCoA for beetles
+plot(beet_pcoa_jac$vectors[, 1:2],
+     type = "n", las = 1, asp = 1,
+     xlab = "Axis 1", ylab = "Axis 2", main = "Beetles",
+     pty = "s")
+# ordiellipse(beet_pcoa$vectors, beet_covs$lc, draw = "polygon", col = c("darkgreen", "goldenrod"))
+# points(beet_pcoa$vectors[beet_covs$lc=="Dense",1:2], pch = 16, col = "darkgreen")
+# points(beet_pcoa$vectors[beet_covs$lc=="Open",1:2], pch = 17, col = "goldenrod")
+points(beet_pcoa_jac$vectors, pch = 21, bg = "magenta")
+ordisurf(beet_pcoa_jac$vectors, beet_covs_raw$mean_T-273.15,
+         add = T, col = "gray50")
+plot(beet_envfit_pcoa_jac,
+     labels = list(vectors = c("Temp", "F dist")),
+     bg = rgb(1, 1, 1, 0.5), col = "gray30")
+mtext("b", side = 2, line = 2, padj = -8, las = 2, font = 2)
+# Simpson
+plot(vert_pcoa_sim$vectors[, 1:2], las = 1, asp = 1,
+     xlab = "Axis 1", ylab = "Axis 2", type = "n")
+points(vert_pcoa_sim$vectors, pch = 21, bg = 'turquoise')
+plot(vert_envfit_pcoa_sim,
+     labels = list(vectors = c("Temp", "F dist", "gHM")),
+     bg = rgb(1, 1, 1, 0.5), col = "gray30", p.max = 0.05)
+mtext("c", side = 2, line = 2, padj = -8, las = 2, font = 2)
+
+plot(beet_pcoa_sim$vectors[, 1:2],
+     type = "n", las = 1, asp = 1,
+     xlab = "Axis 1", ylab = "Axis 2",
+     pty = "s")
+points(beet_pcoa_sim$vectors, pch = 21, bg = "magenta")
+plot(beet_envfit_pcoa_sim,
+     labels = list(vectors = c("Temp", "F dist")),
+     bg = rgb(1, 1, 1, 0.5), col = "gray30", p.max = 0.05)
+mtext("d", side = 2, line = 2, padj = -8, las = 2, font = 2)
+###
+par(mfrow = c(1, 1))
 
 ##### NMDS approach #####
 vert_NMDS <- metaMDS(comm_std, trymax = 100)
