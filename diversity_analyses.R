@@ -684,26 +684,48 @@ pbeetdiv <- data.frame(n = diversity(commb), beet_covs_raw) %>%
 
 ggarrange(pvertrich, pbeetrich, pvertdiv, pbeetdiv, labels = 'auto',
           common.legend = T, align = 'hv')
+
 ### Similarity between taxa ####
 # Mantel correlation between dissimilarity matrices of verts and beetles
-# Find sites in common, subset data frames
+# Find sites in common, subset dissim matrices
 commonsites <- intersect(rownames(comm), rownames(commb))
-commb_commonsites <- commb[commonsites,]
-comm_commonsites <- comm_std[commonsites,]
-# calculate betadiversity as dissimilarity and mantel correlation
-subsetdistvert <- betadiver(comm_commonsites, method = "w")
-subsetdistbeet <- betadiver(commb_commonsites, method = "w")
 
-mantel(subsetdistbeet, subsetdistvert)
+vert_dissim_jac_sub <- as.matrix(vert_dissim_jac)[commonsites, commonsites] |> as.dist()
+vert_dissim_sim_sub <- as.matrix(vert_dissim_sim)[commonsites, commonsites] |> as.dist()
+beet_dissim_jac_sub <- as.matrix(beet_dissim_jac)[commonsites, commonsites] |> as.dist()
+beet_dissim_sim_sub <- as.matrix(beet_dissim_sim)[commonsites, commonsites] |> as.dist()
+
+# Plot dissims
+plot(vert_dissim_jac_sub, beet_dissim_jac_sub)
+plot(vert_dissim_sim_sub, beet_dissim_sim_sub)
+
+# calculate Mantel correlations between vertebrates and beetles,
+# for Jaccard and Simpson indices
+mantel(vert_dissim_jac_sub, beet_dissim_jac_sub)
+mantel(vert_dissim_sim_sub, beet_dissim_sim_sub)
 # There is a statistically significant correlation. r = 0.175, p = 0.001. (with Bray distance)
 # r = 0.06569, p = 0.111 (for betadiver metric - Sorensen, presence/absence)
-plot(subsetdistbeet, subsetdistvert)
+
 
 # Include Effect of distance, calculate partial statistic
-commonsitedist <- tibble(site = commonsites) %>% left_join(allsites_cov_db) %>% 
-  select(easting, northing) %>% dist()
-mantel.partial(subsetdistbeet, subsetdistvert, commonsitedist)
-mantel(subsetdistvert, commonsitedist)
+commonsitedist <- tibble(site = commonsites) %>%
+  left_join(allsites_cov_db) %>% 
+  select(easting, northing) %>%
+  dist()
+mantel.partial(vert_dissim_jac_sub, beet_dissim_jac_sub, commonsitedist)
+mantel.partial(vert_dissim_sim_sub, beet_dissim_sim_sub, commonsitedist)
+
+# Mantel correlogram (recommended over partial Mantel)
+mantel.correlog(beet_dissim_sim_sub, commonsitedist)|>plot()
+mantel.correlog(vert_dissim_sim_sub, commonsitedist)|>plot()
+mantel.correlog(beet_dissim_jac_sub, commonsitedist)|>plot()
+mantel.correlog(vert_dissim_jac_sub, commonsitedist)|>plot()
+
+# Mantel correlation between dissim and distance
+mantel(vert_dissim_jac_sub, commonsitedist)
+mantel(beet_dissim_jac_sub, commonsitedist)
+mantel(vert_dissim_sim_sub, commonsitedist)
+mantel(beet_dissim_sim_sub, commonsitedist)
 # Geographical distance is correlated with community dissimilarity for both
 # vertebrates (r = 0.1977, p = 0.001) and beetles (r = 0.321, p = 0.001). There
 # is a lot of noise in this relationship though.
