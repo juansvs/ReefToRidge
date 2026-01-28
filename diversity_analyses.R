@@ -47,32 +47,17 @@ comm_std <- comm / effort
 # Calculate disimilarities
 vert_dissim <- vegdist(comm_std)
 beet_dissim <- vegdist(commb)
-# distance with the Jaccard turnover index
-vert_dissim_jac <- vegdist(comm_std, "jaccard", binary = TRUE)
-beet_dissim_jac <- vegdist(commb, "jaccard", binary = TRUE)
-# distance with the Simpson nestedness index
-# 1. create matrix
-vert_dmat_sim <- outer(seq.int(nrow(comm)), seq.int(nrow(comm)))
-for(i in seq.int(nrow(comm))) {
-  for(j in seq.int(nrow(comm))) {
-    A <- comm[i, ] > 0
-    B <- comm[j, ] > 0
-    vert_dmat_sim[i, j] <- sum(A + B == 2)/min(sum(A), sum(B))
-  }
-}
-# repeat for beetles
-beet_dmat_sim <- outer(seq.int(nrow(commb)), seq.int(nrow(commb)))
-for(i in seq.int(nrow(commb))) {
-  for(j in seq.int(nrow(commb))) {
-    A <- commb[i, ] > 0
-    B <- commb[j, ] > 0
-    beet_dmat_sim[i, j] <- sum(A + B == 2)/min(sum(A), sum(B))
-  }
-}
-# transform to dist objects
-vert_dmat_sim <- as.dist(vert_dmat_sim)
-beet_dmat_sim <- as.dist(beet_dmat_sim)
 
+# distance with the Jaccard turnover index
+vert_dissim_jac <- vegdist(comm, "jaccard", binary = TRUE)
+beet_dissim_jac <- vegdist(commb, "jaccard", binary = TRUE)
+
+
+# distances with the Simpson nestedness index
+vert_dissim_sim <- designdist(comm, method = "J / pmin(A, B)",
+                            terms = "binary", name = "Simpson")
+beet_dissim_sim <- designdist(commb, method = "J / pmin(A, B)",
+                            terms = "binary", name = "Simpson")
 
 # covariates
 vert_covs_raw <- data.frame(site = rownames(comm)) %>%
@@ -163,11 +148,11 @@ select_models(permanova_comp_beet_jac)
 ### Same but using Simpson binary index
 permanova_comp_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture"),
                                              k = 5), 
-                                 com_data = vert_dmat_sim, env_data = vert_covs)
+                                 com_data = vert_dissim_sim, env_data = vert_covs)
 select_models(permanova_comp_sim)
 
 permanova_comp_beet_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture")), 
-                                      com_data = beet_dmat_sim, env_data = beet_covs)
+                                      com_data = beet_dissim_sim, env_data = beet_covs)
 select_models(permanova_comp_beet_sim)
 
 
@@ -184,9 +169,9 @@ vert_permanova_jac
 beet_permanova_jac
 
 # using Simpson index of nestedness
-vert_permanova_sim <- adonis2(vert_dmat_sim ~ fdist + tmean + ghm,
+vert_permanova_sim <- adonis2(vert_dissim_sim ~ fdist + tmean + ghm,
                               data = vert_covs, by = 'terms')
-beet_permanova_sim <- adonis2(beet_dmat_sim ~ fdist + tmean,
+beet_permanova_sim <- adonis2(beet_dissim_sim ~ fdist + tmean,
                               data = beet_covs, by = 'terms')
 vert_permanova_sim
 beet_permanova_sim
@@ -207,8 +192,8 @@ beet_pcoa <- pcoa(beet_dissim)
 vert_pcoa_jac <- pcoa(vert_dissim_jac)
 beet_pcoa_jac <- pcoa(beet_dissim_jac)
 
-vert_pcoa_sim <- pcoa(vert_dmat_sim)
-beet_pcoa_sim <- pcoa(beet_dmat_sim)
+vert_pcoa_sim <- pcoa(vert_dissim_sim)
+beet_pcoa_sim <- pcoa(beet_dissim_sim)
 
 # Fit environ variables
 vert_envfit_pcoa <- envfit(vert_pcoa$vectors~tmean+fdist + ghm, data = vert_covs)
