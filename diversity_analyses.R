@@ -720,12 +720,6 @@ comb_metrics_db <- acoustic_jointdb %>% filter(hour(dttm)>5) %>% # keep only day
 p1 <- ggplot(comb_metrics_db, aes(n_vert,n_beet))+geom_point()+theme_pubr(base_size = 14)+
   labs(x = "Vertebrate richness", y = "Beetle richness")
   # stat_smooth(method = 'lm', color = "gray50")
-p2 <- ggplot(comb_metrics_db, aes(n_vert,mean_MFC))+geom_point()+theme_pubr(base_size = 14)+
-  labs(x = "Vertebrate richness", y = "MFC")
-  # stat_smooth(method = 'lm')
-p3 <- ggplot(comb_metrics_db, aes(mean_MFC, n_beet))+geom_point()+theme_pubr(base_size = 14)+
-  labs(x = "Beetle richness", y = "MFC")
-  # stat_smooth(method = 'lm')
 p4 <- ggplot(comb_metrics_db, aes(s_vert,s_beet))+geom_point()+theme_pubr(base_size = 14)+
   labs(x = "Vertebrate diversity", y = "Beetle diversity")
 # stat_smooth(method = 'lm')
