@@ -7,7 +7,7 @@ library(tidyverse)
 # occasions at each site. We exclude the sites with less than 4 weeks of
 # sampling, and divide the detections into monthly counts.
 
-#### CT data ####
+#### Vertebrates ####
 allsites_pts <- terra::vect("Data/combined_survey_pts.geojson")
 allsites_cov_db <- as.data.frame(allsites_pts)
 # campts_db <- filter(as.data.frame(allsites_pts), has_cam==1)
@@ -334,7 +334,7 @@ filter(preddb, sp %in% c("tinamou_great", "jaguar", "ocelot",
         panel.border = element_rect(fill = NA))
 
 
-#### Pitfall data ####
+#### Beetles ####
 dat_beet <- read.csv("Data/dung_beetles_prc.csv") %>%
   select(-Date) %>%
   # join traps from same station
