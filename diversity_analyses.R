@@ -327,34 +327,9 @@ ordiellipse(beet_NMDS, groups = beet_covs$lc, col = c("darkgreen", "goldenrod"))
 text(beet_NMDS, display = "species", cex = 0.8)
 plot(beet_envfit_nmds, col = "blue", cex = 0.8, p.max = 0.05)
 
-#### Community metrics ####
+#### Diversity and richness ####
 
-# plot richness (observed) against covariates individually
-plot(specnumber(comm) ~ vert_covs$alt)
-plot(specnumber(comm) ~ vert_covs$ghm)
-plot(specnumber(comm) ~ vert_covs$fdist)
-plot(specnumber(comm) ~ vert_covs$tmean)
-plot(specnumber(comm) ~ vert_covs$tsd)
-
-plot(specnumber(commb) ~ beet_covs$alt)
-plot(specnumber(commb) ~ beet_covs$ghm)
-plot(specnumber(commb) ~ beet_covs$fdist)
-plot(specnumber(commb) ~ beet_covs$tmean)
-plot(specnumber(commb) ~ beet_covs$tsd, col = beet_covs$lc, pch = 16)
-
-# plot diversity (Shannon) against covariates individually
-plot(diversity(comm) ~ vert_covs$alt)
-plot(diversity(comm) ~ vert_covs$ghm)
-plot(diversity(comm) ~ vert_covs$fdist)
-plot(diversity(comm) ~ vert_covs$tmean)
-plot(diversity(comm) ~ vert_covs$tsd)
-# beetles
-plot(diversity(commb) ~ beet_covs$alt)
-plot(diversity(commb) ~ beet_covs$ghm)
-plot(diversity(commb) ~ beet_covs$fdist)
-plot(diversity(commb) ~ beet_covs$tmean)
-plot(diversity(commb) ~ beet_covs$tsd)
-#### diversity and richness ggplots ####
+##### ggplots #####
 p1 <- data.frame(n = specnumber(comm), vert_covs_raw) %>%
   ggplot(aes(mean_T - 273.15, n)) +
   geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5))+
