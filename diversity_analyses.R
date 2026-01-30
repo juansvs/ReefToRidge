@@ -44,7 +44,7 @@ effort <- tibble(site = rownames(comm)) %>%
   pull(days) %>%
   as.numeric()
 comm_std <- comm / effort
-# Calculate disimilarities
+##### Calculate disimilarities ####
 vert_dissim <- vegdist(comm_std)
 beet_dissim <- vegdist(commb)
 
@@ -136,45 +136,43 @@ vert_permanova <- adonis2(comm_std~lc+tmean+alt2, data = vert_covs, method = 'br
 beet_permanova <- adonis2(commb~fdist+alt+tmean, data = beet_covs, method = 'bray')
 ### Same but using Jaccard binary index
 # doing the same but removing some covariates (lc and altitude)
-permanova_comp_jac <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture"),
-                                          k = 5), 
+permanova_comp_jac <- fit_models(make_models(vars = c("ghm", "fdist",
+                                                      "tmean", "tsd", "treecov"),
+                                          k = 4), 
                               com_data = vert_dissim_jac, env_data = vert_covs)
 select_models(permanova_comp_jac)
 
-permanova_comp_beet_jac <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture")), 
+permanova_comp_beet_jac <- fit_models(make_models(vars = c("ghm", "fdist",
+                                                           "tmean", "tsd", "treecov"),
+                                                  k = 4), 
                                   com_data = beet_dissim_jac, env_data = beet_covs)
 select_models(permanova_comp_beet_jac)
 
 ### Same but using Simpson binary index
-permanova_comp_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture"),
-                                             k = 5), 
+permanova_comp_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean",
+                                                      "tsd", "treecov"),
+                                             k = 4), 
                                  com_data = vert_dissim_sim, env_data = vert_covs)
 select_models(permanova_comp_sim)
 
-permanova_comp_beet_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture")), 
+permanova_comp_beet_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean",
+                                                           "tsd", "treecov"),
+                                                  k = 4), 
                                       com_data = beet_dissim_sim, env_data = beet_covs)
 select_models(permanova_comp_beet_sim)
 
 
-
+## Run PERMANOVA
 vert_permanova <- adonis2(comm_std ~ fdist + tmean + ghm, data = vert_covs, method = 'bray', by = 'terms')
 beet_permanova <- adonis2(commb ~ fdist + tmean, data = beet_covs, method = 'bray', by = 'terms')
 vert_permanova
 beet_permanova
 
 # using jaccard index of turnover
-vert_permanova_jac <- adonis2(vert_dissim_jac ~ fdist + tmean + ghm, data = vert_covs, by = 'terms')
+vert_permanova_jac <- adonis2(vert_dissim_jac ~ fdist + tmean + ghm + treecov, data = vert_covs, by = 'terms')
 beet_permanova_jac <- adonis2(beet_dissim_jac ~ fdist + tmean, data = beet_covs, by = 'terms')
 vert_permanova_jac
 beet_permanova_jac
-
-# using Simpson index of nestedness
-vert_permanova_sim <- adonis2(vert_dissim_sim ~ fdist + tmean + ghm,
-                              data = vert_covs, by = 'terms')
-beet_permanova_sim <- adonis2(beet_dissim_sim ~ fdist + tmean,
-                              data = beet_covs, by = 'terms')
-vert_permanova_sim
-beet_permanova_sim
 
 # These results suggest that differences in species turnover for vertebrates are
 # influenced mostly by differences in temperature and distance to forest, with
@@ -183,7 +181,6 @@ beet_permanova_sim
 # nestedness at all.
 
 
-##### PERMANOVA viz #####
 #####------ PCoA #####
 # Run PCoA for visualization of PERMANOVA
 vert_pcoa <- pcoa(vert_dissim)
