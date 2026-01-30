@@ -454,64 +454,64 @@ sapply(list(sf_beet_jsdm_full, sf_beet_jsdm_null,
 # rm(sfbeetJSDMalt, sf_beet_jsdm_alt2, sfbeetJSDMaltlc)
 ###
 
-##### occupancy model with bait as detection covar #####
-beet_sp_mat <- read.csv("Data/dung_beetles_prc.csv") %>%
-  filter(Bait != "") %>% # remove stations with no bait info
-  select(-c(Date, Plot)) %>%
+#### multiple occasions ####
+beet_sp_mat2 <- read.csv("Data/dung_beetles_prc.csv") %>%
+  select(-c(Date, Plot, Bait)) %>%
   inner_join(select(allsites_cov_db, site)) %>%
   mutate(across(where(is.numeric), \(x) as.numeric(x>0))) %>% # make binary
-  pivot_longer(where(is.numeric), names_to = "sp", values_to = "pres") %>%
+  mutate(occ = row_number(), .by = site) %>% # add occassion
+  pivot_longer(2:68, names_to = "sp", values_to = "pres") %>%
   filter(sum(pres) > 0, .by = site) %>% # filter empty sites
-  # filter(sum(pres)>5, .by = sp) %>% # only species present at multiple (>5) sites
-  # complete(nesting(site,Bait), sp, fill = list(pres = 0)) %>% 
-  complete(site, Bait, sp) %>%
-  arrange(Bait, site, sp)
-nsp <- length(unique(beet_sp_mat$sp))
-nst <- length(unique(beet_sp_mat$site))
-nocc <- length(unique(beet_sp_mat$Bait))
+  complete(nesting(occ, site), sp, fill = list(n = 0)) %>% # make missing species explicit
+  complete(occ, site, sp) %>% 
+  arrange(occ, site, sp)
+nsp <- length(unique(beet_sp_mat2$sp))
+nst <- length(unique(beet_sp_mat2$site))
+nocc <- length(unique(beet_sp_mat2$occ))
 nsp * nst * nocc
-beetmody <- array(data = beet_sp_mat$pres, dim = c(nsp, nst, nocc),
-                  dimnames = list(species = unique(beet_sp_mat$sp),
-                                  sites = unique(beet_sp_mat$site),
-                                  bait = unique(beet_sp_mat$Bait)))
+
+beetmody <- array(data = beet_sp_mat2$pres, dim = c(nsp, nst, nocc),
+                  dimnames = list(species = unique(beet_sp_mat2$sp),
+                                  sites = unique(beet_sp_mat2$site),
+                                  occ = unique(beet_sp_mat2$occ)))
 beetmody <- beetmody[, apply(beetmody, 2, sum, na.rm = TRUE) > 5, ]
 # create env matrix
 beet_covs <- tibble(site = dimnames(beetmody)[[2]]) %>%
   left_join(allsites_cov_db) %>%
-  select(site, easting, northing, ghm1, lc2, alt1,  lfdistance_2) %>%
-  rename(x = easting, y = northing, forest = lc2, alt = alt1,
-         ghm = ghm1, pa_dist = distance, lgfor_dist = lfdistance) %>%
-  mutate(forest = factor(forest, labels = c("Dense", "Open"))) %>%
-  column_to_rownames("site") %>%
-  as.matrix()
-baitcov <- read.csv("Data/dung_beetles_prc.csv") %>%
-  filter(Bait != "") %>% # remove stations with no bait info
-  select(-c(Date, Plot)) %>%
-  inner_join(select(campts_db, site)) %>%
-  mutate(across(where(is.numeric), \(x) as.numeric(x>0))) %>% # make binary
-  pivot_longer(where(is.numeric), names_to = "sp", values_to = "pres") %>%
-  filter(sum(pres) > 0, .by = site) %>% # filter empty sites
-  filter(sum(pres) > 5, .by = sp) %>% # only species present at multiple (>5) sites
-  distinct(site, Bait) %>%
-  pivot_wider(values_from = Bait, names_from = Bait) %>%
-  arrange(site)
+  left_join(daytemp_sum) %>%
+  select(site, easting, northing, ghm1, alt1, lfdistance_2,
+         mean_T, sd_T, canopy_cover) %>%
+  rename(x = easting, y = northing, fdist = lfdistance_2, alt = alt1,
+         ghm = ghm1, treecov = canopy_cover) 
 
 beet_data_occ <- list(y = beetmody,
-                      occ.covs = beet_covs[,c("landcov", "alt", "ghm",
-                                              "pa_dist", "lgfor_dist")],
-                      det.covs = list(bait = baitcov),
-                      coords = beet_covs[, c("x", "y")])
+                      occ.covs = beet_covs[,c("ghm","treecov", "fdist", "mean_T")],
+                      coords = as.matrix(beet_covs[, c("x", "y")]))
 
 lfmodbeetnull <- lfMsPGOcc(occ.formula = ~1,
                            det.formula = ~1,
                            data = beet_data_occ,
                            n.samples = 1000, n.thin = 2,
-                           n.chains = 3, n.factors = 4)
+                           n.chains = 3, n.factors = 4) # wAIC 3444
 
 lfmodbeetfull <- update(lfmodbeetnull,
-                        occ.formula = ~scale(alt) + scale(landcov) + scale(ghm))
+                        occ.formula = ~ghm + scale(treecov) + log(fdist + 1) + scale(mean_T)) # wAIC 3328
+waicOcc(lfmodbeetfull)
+waicOcc(m1 <- update(lfmodbeetnull,
+               occ.formula = ~scale(mean_T) + scale(treecov)))
+rm(m1)
+# no model seems to perform better than the full model
 
-
+# Spatial models
+sfmodbeetfull <- sfMsPGOcc(occ.formula = ~ghm + scale(treecov) + log(fdist + 1) + scale(mean_T),
+                           det.formula = ~1,
+                           data = beet_data_occ,
+                           n.neighbors = 10,
+                           n.factors = 4,
+                           n.batch = 600,
+                           n.burn = 5000,
+                           n.thin = 50,
+                           batch.length = 25) # waic 3321, lower than the full model without spatial covars
 #### Plots ####
 bestbeetmod <- beet_jsdm_ghmtemp
 ##### Parameter plots ####
