@@ -561,6 +561,16 @@ ggarrange(pvertrich, pbeetrich, pvertdiv, pbeetdiv, labels = 'auto',
           common.legend = T, align = 'hv')
 
 ### Similarity between taxa ####
+# Mantel correlograms
+par(mfrow = c(2,2), mar = c(4, 5, 1, 1))
+vert_dists <- dist(vert_covs[, c("easting", "northing")])
+beet_dists <- dist(beet_covs[, c("easting", "northing")])
+plot(mantel.correlog(vert_dissim_jac, vert_dists))
+plot(mantel.correlog(beet_dissim_jac, beet_dists))
+plot(mantel.correlog(vert_dissim_sim, vert_dists))
+plot(mantel.correlog(beet_dissim_sim, beet_dists))
+
+
 # Mantel correlation between dissimilarity matrices of verts and beetles
 # Find sites in common, subset dissim matrices
 commonsites <- intersect(rownames(comm), rownames(commb))
