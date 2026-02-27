@@ -459,37 +459,7 @@ anova(beet_div_lm3, beet_div_lm2, test = "F")
 # all models have comparable AIC, the top two (2 and 3) are nearly identical. I
 # will stick with model 2 (alt, ghm, lc).
 
-##### MFC ####
-acous_gam_db <- left_join(summarised_MFC, allsites_cov_db) %>% 
-  mutate(site = factor(site), lc = factor(lc2, labels = c("Dense","Open")), alt = scale(alt1), fdist = scale(log1p(lfdistance_2)), ghm = scale(ghm1), temp = scale(temp_mean1))
-acous_glmm <- gam(median_MFC~lc+alt+ghm+fdist+s(site, bs = 're'), data = acous_gam_db, method = "REML")
-summary(acous_glmm) # sig. random effect of site. No sig linear terms.
-check_collinearity(acous_glmm) # very high corr, highest is for lc
-# GAM
-acous_gam <- gam(median_MFC~lc+s(alt)+s(ghm)+s(fdist)+s(site, bs = "re"),data = acous_gam_db, method = 'REML') # this code does not have explicit import of this dataset yet
-summary(acous_gam) # ghm and fdist are linear
-acous_gam <- gam(median_MFC~lc+s(alt)+ghm+fdist+s(site, bs = "re"),data = acous_gam_db, method = 'REML')
-summary(acous_gam)
-check_concurvity(acous_gam) # high concurvity in parametric terms
-check_collinearity(acous_gam) # extremely high VIF, starting with lc
-acous_gam2 <- update(acous_gam, .~.-lc)
-summary(acous_gam2)
-check_collinearity(acous_gam2)
-acous_gam3 <- update(acous_gam2, .~.-ghm)
-summary(acous_gam3) # alt reduced to nearly linear
-acous_gam4 <- update(acous_gam3, .~.-s(alt)+alt)
-summary(acous_gam4)
-check_collinearity(acous_gam4) # High corr between fdist and alt.
-acous_gam5 <- update(acous_gam4, .~.-fdist)
-summary(acous_gam5)
-AIC(acous_gam, acous_gam2, acous_gam3, acous_gam4, acous_gam5)
-# model 5 (alt+ranef) has the lowest AIC.
-acous_nullgamm <- gam(median_MFC~s(site, bs = "re"),data = acous_gam_db, method = 'REML')
-acous_nullgamm2 <- gam(median_MFC~1,data = acous_gam_db, method = 'REML')
-summary(acous_nullgamm)
-summary(acous_nullgamm2)
-AIC(acous_nullgamm, acous_nullgamm2, acous_gam5)
-# The null model with only random effects has comparable AIC as model 5
+
 
 
 ##### Visualize diversity ####
