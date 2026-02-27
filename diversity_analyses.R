@@ -292,21 +292,8 @@ p2 <- data.frame(n = diversity(comm), vert_covs_raw) %>%
   ggplot(aes(mean_T - 273.15, n)) +
   geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
   labs(x = expression(paste("Mean temperature (",degree*C, ")")),
-  y = "Diversity") +
-  theme_pubr()
-p3 <- data.frame(n = specnumber(comm),vert_covs_raw) %>%
-  ggplot(aes(sd_T, n)) +
-  geom_point(shape = 16, size=2, color = rgb(0,0,0,0.5)) +
-  labs(x = expression(paste("St.dev. temperature (",degree*C, ")")),
        y = "Species richness") +
   theme_pubr()
-p4 <- data.frame(n = diversity(comm), vert_covs_raw) %>%
-  ggplot(aes(sd_T, n)) +
-  geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
-  labs(x = expression(paste("St.dev. temperature (",degree*C, ")")),
-       y = "Diversity") +
-  theme_pubr()
-p5 <- data.frame(n = specnumber(commb),beet_covs_raw) %>%
   ggplot(aes(mean_T - 273.15, n)) +
   geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
   labs(x = expression(paste("Mean temperature (",degree*C, ")")),
@@ -317,12 +304,6 @@ p6 <- data.frame(n = diversity(commb), beet_covs_raw) %>%
   geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
   labs(x = expression(paste("Mean temperature (", degree*C, ")")),
        y = "Diversity") +
-  theme_pubr()
-p7 <- data.frame(n = specnumber(commb), beet_covs_raw) %>%
-  ggplot(aes(sd_T, n))+
-  geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
-  labs(x = expression(paste("St.dev. temperature (", degree*C, ")")),
-       y = "Species richness") +
   theme_pubr()
 p8 <- data.frame(n = diversity(commb), beet_covs_raw) %>%
   ggplot(aes(sd_T, n)) +
