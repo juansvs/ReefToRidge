@@ -193,10 +193,7 @@ beet_envfit_pcoa_jac <- envfit(beet_pcoa_jac$vectors ~ tmean + fdist, data = bee
 
 
 # Plot PCoA
-transp_cols <- col2rgb(c("darkgreen", "goldenrod")) |>
-  apply(2, \(x) rgb(x[1], x[2], x[3], alpha = 150, maxColorValue = 255))
-
-# "#4B0055" "#FDE333" viridis 2 colors
+taxa_cols <- hcl.colors(2, "Geyser", rev = TRUE)
 # vertebrate PcOA
 plot(vert_pcoa$vectors[, 1:2], las = 1, asp = 1,
      xlab = "Axis 1", ylab = "Axis 2", type = "n",
