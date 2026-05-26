@@ -322,73 +322,102 @@ vert_rich_lm <- gam(n ~ lc + ghm + alt + fdist,
                     family = poisson, data = vert_gam_db)
 # Full GAM, with smooths for all covars
 vert_rich_gam <- gam(n ~ lc + s(ghm) + s(alt) + s(fdist),
+#### Richness models ####
+##### Vertebrates #####
+vert_gam_db <- data.frame(n = specnumber(comm), vert_covs_raw)
+
+# GAM of richness vs alt
+gam_rich_vert <- gam(n ~ s(alt1, bs = "cr", k = 6),
                      family = poisson, data = vert_gam_db, method = "REML")
-summary(vert_rich_gam)
-# The full model reduces ghm to a linear effects
-vert_rich_gam <- update(vert_rich_gam, . ~ . - s(ghm) + ghm)
-check_concurvity(vert_rich_gam)
-# There is high concurvity for fdist, moderate for the parametric terms.
-vert_rich_gam2 <- update(vert_rich_gam, . ~ . - s(fdist) + fdist)
-summary(vert_rich_gam2)
-check_concurvity(vert_rich_gam2)
-check_collinearity(vert_rich_gam2)
-# This model has significant smooth for altitude. The linear terms are not
-# significant. lc and fdist could be correlated, I'll remove fdist first since it
-# has the highest VIF (6.75)
-vert_rich_gam3 <- update(vert_rich_gam2, . ~ . - fdist)
-summary(vert_rich_gam3) # sig smooth of alt (X2 = 16.98, p = 0.0060), sig neg effect of open lc (beta = -0.41, z = -3.929 p<0.001)
-vert_rich_gam4 <- update(vert_rich_gam3, . ~ . - ghm) # ghm was not significant
-vert_rich_gam5 <- update(vert_rich_gam3, . ~ . - lc - ghm) # alternative including fdist instead of lc
+gam_rich_vert_null <- update(gam_rich_vert, . ~ 1) # intercept-only
+gam_rich_vert_null2 <- update(gam_rich_vert, . ~ alt1) # linear fixed effect of altitude
+appraise(gam_rich_vert)
 
-AIC(vert_rich_gam, vert_rich_gam2, vert_rich_gam3, vert_rich_lm, vert_rich_gam4, vert_rich_gam5)
-# The lowest AIC is given by model 4 (smooth alt, lc), but it is comparable to
-# model 3 (smooth alt, lc, )
-draw(vert_rich_gam4, residuals = TRUE)
-appraise(vert_rich_gam4)
-anova(vert_rich_gam4, vert_rich_gam3, test = "Chisq")
-# I will report the results of model 4, which has smooth terms for altitude and
-# a fixed effect of land cover
-summary(vert_rich_gam4) # smooth is sig (X2 = 17.0, p = 0.0060), sig lc (beta = -0.410, z = -4.247, p<0.001)
+AIC(gam_rich_vert, gam_rich_vert_null, gam_rich_vert_null2)
+# The lowest AIC is given by the model with the smooth term
+anova(gam_rich_vert, gam_rich_vert_null)
+anova(gam_rich_vert, gam_rich_vert_null2)
+# Both null models perform worse and are significantly different.
 
-##### Beet richness #####
+##### Beetles #####
+beet_gam_db <- data.frame(n = specnumber(commb), beet_covs_raw)
 
-# linear model
-beet_rich_lm <- gam(n ~ lc + ghm + alt + fdist, data = beet_gam_db, method = "REML")
-summary(beet_rich_lm) # no sig effects
-check_collinearity(beet_rich_lm) # lfdist has the highest VIF (10), and lc has moderate (VIF = 9.47)
-# This model has moderate correlation between lc and fdist, let's remove lc.
-beet_rich_lm2 <- update(beet_rich_lm, . ~ . - fdist)
-check_collinearity(beet_rich_lm2) # removing fdist reduces all VIF
-
-# beetle richness GAM
-beet_rich_gam <- gam(n ~ lc + s(ghm) + s(alt) + s(fdist),
+# GAM of richness vs alt
+gam_rich_beet <- gam(n ~ s(alt1, bs = "cr", k = 6),
                      family = poisson, data = beet_gam_db, method = "REML")
-summary(beet_rich_gam)
-# no significant smooths, nor linear effects. ghm and Fdist reduced to linear
-# effect.
-beet_rich_gam <- update(beet_rich_gam, .~. - s(ghm) + ghm - s(fdist) + fdist)
-check_concurvity(beet_rich_gam)
-# There is moderate concurvity in the parametric terms. Highest collinearity is for fdist
-check_collinearity(beet_rich_gam)
-beet_rich_gam2 <- update(beet_rich_gam, .~. - fdist)
-summary(beet_rich_gam2) # sig effect of lc (beta = -0.29, z = -2.209, p = 0.0272)
-check_concurvity(beet_rich_gam2) # low concurvity
-check_collinearity(beet_rich_gam2) # low correlations in parametric terms
+gam_rich_beet_null <- update(gam_rich_beet, . ~ 1) # intercept-only
+gam_rich_beet_null2 <- update(gam_rich_beet, . ~ alt1) # linear fixed effect of altitude
 
-beet_rich_gam3 <- update(beet_rich_gam2, .~. - ghm) # remove non sig ghm term
-summary(beet_rich_gam3) # significant altitude smooth (X2 = 18.22, p = 0.00263), sig lc (-0.284, z = -2.125, p = 0.0336)
+AIC(gam_rich_beet, gam_rich_beet_null, gam_rich_beet_null2)
+# In the case of beetles the intercept-only model had the lowest AIC, but they
+# were all comparable (dAIC < 2)
+anova(gam_rich_beet_null, gam_rich_beet)
+anova(gam_rich_beet_null, gam_rich_beet_null2)
 
-# Rank models
-AIC(beet_rich_lm, beet_rich_lm2, beet_rich_gam, beet_rich_gam2, beet_rich_gam3)
-# Lowest AIC given by model 3 (s(alt) + lc). Comparable to model 2 though (+ ghm)
-anova(beet_rich_gam3, beet_rich_gam2, test = "Chisq")
+##### Prediction plots ####
 
-# I will report the values of model 3, which includes smooth terms for altitude
-# and a linear term of lc
-appraise(beet_rich_gam3)
-draw(beet_rich_gam3, residuals = TRUE)
+# Vert GAM predicted richness vs alt
+pred_alts_vert <- seq(min(vert_covs_raw$alt1),
+                     max(vert_covs_raw$alt1), length.out = 100
+)
+newdata_vert <- expand.grid(intercept = 1,
+                           alt1 = pred_alts_vert
+)
+pred_vert_rich <- predict.gam(gam_rich_vert,
+                              newdata = newdata_vert, 
+                              type = 'response',
+                              se.fit = TRUE
+)
+vert_rich_pred_db <- data.frame(newdata_raw,
+                                n = pred_vert_rich$fit,
+                                se = pred_vert_rich$se.fit
+)
+# beetles
+pred_alts_beet <- seq(min(beet_covs_raw$alt1),
+                     max(beet_covs_raw$alt1), length.out = 100
+)
+newdata_beet<- expand.grid(intercept = 1, 
+                           alt1 = pred_alts_beet
+)
 
-##### Vert diversity #####
+pred_beet_rich <- predict.gam(gam_rich_beet_null,
+                              newdata = newdata_beet, 
+                              type = 'response', se.fit = T
+)
+beet_rich_pred_db <- data.frame(newdata_beet,
+                                n = pred_beet_rich$fit, se = pred_beet_rich$se.fit
+)
+## single plot with vert and beet richness vs alt
+rbind(data.frame(n = specnumber(comm), vert_covs_raw, sp = "vert"),
+      data.frame(n = specnumber(commb), beet_covs_raw, sp = "beet")) %>% 
+  ggplot() +
+  geom_point(aes(alt1, n, shape = sp, color = sp), show.legend = FALSE) +
+  labs(x = "Altitude (masl)", y = "Species richness") +
+  theme_pubr(base_size = 16) +
+  theme(palette.color.discrete = taxa_cols)
+
+# same but with predictions from GAM
+rbind(data.frame(n = specnumber(comm), vert_covs_raw, sp = "vert"),
+      data.frame(n = specnumber(commb), beet_covs_raw, sp = "beet")) %>% 
+  ggplot() +
+  geom_ribbon(aes(x = alt1, ymin = n - se, ymax = n + se),
+              data = vert_rich_pred_db, fill = alpha(taxa_cols[2], 0.5)) +
+  geom_line(aes(alt1, n),
+            data = vert_rich_pred_db, color = taxa_cols[2], linetype = 2) +
+  geom_ribbon(aes(x = alt1, ymin = n - se, ymax = n + se),
+              data = beet_rich_pred_db, fill = alpha(taxa_cols[1], 0.5)) +
+  geom_line(aes(alt1, n),
+            data = beet_rich_pred_db, color = taxa_cols[1], linetype = 2) +
+  geom_point(aes(alt1, n, shape = sp, color = sp), show.legend = FALSE) +
+  labs(x = "Altitude (masl)", y = "Species richness") +
+  theme_pubr(base_size = 16) +
+  theme(palette.color.discrete = taxa_cols)
+
+# export
+ggsave("figures/richness_vs_alt.png", dpi = 300, width = 5, height = 4)
+
+
+#### Vert diversity #####
 # linear model
 vert_div_lm <- gam(s ~ lc + ghm + fdist + alt, data = vert_gam_db, method = "REML")
 summary(vert_div_lm)
