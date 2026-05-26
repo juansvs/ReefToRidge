@@ -155,14 +155,14 @@ select_models(permanova_comp_beet_sim)
 
 
 ## Run PERMANOVA
-vert_permanova <- adonis2(comm_std ~ fdist + tmean + ghm, data = vert_covs, method = 'bray', by = 'terms')
-beet_permanova <- adonis2(commb ~ fdist + tmean, data = beet_covs, method = 'bray', by = 'terms')
+vert_permanova <- adonis2(comm_std ~ fdist + tmean + ghm, data = vert_covs, method = 'bray', by = 'margin')
+beet_permanova <- adonis2(commb ~ fdist + tmean, data = beet_covs, method = 'bray', by = 'margin')
 vert_permanova
 beet_permanova
 
 # using jaccard index of turnover
-vert_permanova_jac <- adonis2(vert_dissim_jac ~ fdist + tmean + ghm + treecov, data = vert_covs, by = 'terms')
-beet_permanova_jac <- adonis2(beet_dissim_jac ~ fdist + tmean, data = beet_covs, by = 'terms')
+vert_permanova_jac <- adonis2(vert_dissim_jac ~ fdist + tmean + ghm + treecov, data = vert_covs, by = 'margin')
+beet_permanova_jac <- adonis2(beet_dissim_jac ~ fdist + tmean, data = beet_covs, by = 'margin')
 vert_permanova_jac
 beet_permanova_jac
 
