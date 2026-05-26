@@ -83,7 +83,7 @@ vert_covs <- mutate(vert_covs_raw,
 beet_covs_raw <- data.frame(site = rownames(commb)) %>%
   left_join(allsites_cov_db) %>%
   left_join(daytemp_sum) %>%
-  select(site, alt1, lc2, ghm1, lfdistance_2, max_T, min_T,
+  select(site, easting, northing, alt1, lc2, ghm1, lfdistance_2, max_T, min_T,
          mean_T, sd_T, canopy_cover)
 beet_covs <- mutate(beet_covs_raw, lc = factor(lc2, labels = c("Dense", "Open")),
                     alt = standardise(alt1),
@@ -95,7 +95,7 @@ beet_covs <- mutate(beet_covs_raw, lc = factor(lc2, labels = c("Dense", "Open"))
                     tmean = standardise(mean_T),
                     tsd = standardise(sd_T),
                     treecov = canopy_cover) %>%
-  select(lc, alt, alt2, ghm, fdist, tmax, tmin, tmean, tsd, treecov)
+  select(easting, northing, lc, alt, alt2, ghm, fdist, tmax, tmin, tmean, tsd, treecov)
 
 ##### PERMANOVA #####
 
