@@ -20,10 +20,10 @@ library(datawizard)
 #### Import data ####
 # Import camera-trap data as matrix for vegan
 comm <- read.csv("Data/vert_comm_mat.csv", row.names = 1)
-
+rownames(comm) <- gsub("#", "", rownames(comm))
 # Import pitfall trap data
 commb <- read.csv("Data/beet_comm_mat.csv", row.names = 1)
-
+rownames(commb) <- gsub("#", "", rownames(commb))
 # Import station data #
 allsites_pts <- terra::vect("Data/combined_survey_pts.geojson")
 allsites_cov_db <- as.data.frame(allsites_pts)
@@ -586,77 +586,6 @@ pbeetdiv <- data.frame(n = diversity(commb), beet_covs_raw) %>%
 ggarrange(pvertrich, pbeetrich, pvertdiv, pbeetdiv, labels = 'auto',
           common.legend = T, align = 'hv')
 
-### Similarity between taxa ####
-# Mantel correlograms
-par(mfrow = c(2,2), mar = c(4, 5, 1, 1))
-vert_dists <- dist(vert_covs[, c("easting", "northing")])
-beet_dists <- dist(beet_covs[, c("easting", "northing")])
-plot(mantel.correlog(vert_dissim_jac, vert_dists))
-plot(mantel.correlog(beet_dissim_jac, beet_dists))
-plot(mantel.correlog(vert_dissim_sim, vert_dists))
-plot(mantel.correlog(beet_dissim_sim, beet_dists))
 
-
-# Mantel correlation between dissimilarity matrices of verts and beetles
-# Find sites in common, subset dissim matrices
-commonsites <- intersect(rownames(comm), rownames(commb))
-
-vert_dissim_jac_sub <- as.matrix(vert_dissim_jac)[commonsites, commonsites] |> as.dist()
-vert_dissim_sim_sub <- as.matrix(vert_dissim_sim)[commonsites, commonsites] |> as.dist()
-beet_dissim_jac_sub <- as.matrix(beet_dissim_jac)[commonsites, commonsites] |> as.dist()
-beet_dissim_sim_sub <- as.matrix(beet_dissim_sim)[commonsites, commonsites] |> as.dist()
-
-# Plot dissims
-plot(vert_dissim_jac_sub, beet_dissim_jac_sub)
-plot(vert_dissim_sim_sub, beet_dissim_sim_sub)
-
-# calculate Mantel correlations between vertebrates and beetles,
-# for Jaccard and Simpson indices
-mantel(vert_dissim_jac_sub, beet_dissim_jac_sub)
-mantel(vert_dissim_sim_sub, beet_dissim_sim_sub)
-# There is a statistically significant correlation. r = 0.175, p = 0.001. (with Bray distance)
-# r = 0.06569, p = 0.111 (for betadiver metric - Sorensen, presence/absence)
-
-
-# Include Effect of distance, calculate partial statistic
-commonsitedist <- tibble(site = commonsites) %>%
-  left_join(allsites_cov_db) %>% 
-  select(easting, northing) %>%
-  dist()
-mantel.partial(vert_dissim_jac_sub, beet_dissim_jac_sub, commonsitedist)
-mantel.partial(vert_dissim_sim_sub, beet_dissim_sim_sub, commonsitedist)
-
-# Mantel correlogram (recommended over partial Mantel)
-mantel.correlog(beet_dissim_sim_sub, commonsitedist)|>plot()
-mantel.correlog(vert_dissim_sim_sub, commonsitedist)|>plot()
-mantel.correlog(beet_dissim_jac_sub, commonsitedist)|>plot()
-mantel.correlog(vert_dissim_jac_sub, commonsitedist)|>plot()
-
-# Mantel correlation between dissim and distance
-mantel(vert_dissim_jac_sub, commonsitedist)
-mantel(beet_dissim_jac_sub, commonsitedist)
-mantel(vert_dissim_sim_sub, commonsitedist)
-mantel(beet_dissim_sim_sub, commonsitedist)
-# Geographical distance is correlated with community dissimilarity for both
-# vertebrates (r = 0.1977, p = 0.001) and beetles (r = 0.321, p = 0.001). There
-# is a lot of noise in this relationship though.
-
-# Compare and plot rich, div, for both taxa, and compare with MFC
-# aggregate the index calculated into weekly values, and only taking sunrise and sunset values
-comb_metrics_db <- acoustic_jointdb %>% filter(hour(dttm)>5) %>% # keep only daytime recordings
-  summarise(mean_MFC=mean(MFC), .by = site) %>% 
-  select(site,mean_MFC) %>%
-  full_join(data.frame(site = rownames(comm), n_vert = specnumber(comm), s_vert = diversity(comm))) %>% 
-  full_join(data.frame(site = rownames(commb), n_beet = specnumber(commb), s_beet = diversity(commb))) %>% 
-  left_join(allsites_cov_db)
-
-p1 <- ggplot(comb_metrics_db, aes(n_vert,n_beet))+geom_point()+theme_pubr(base_size = 14)+
-  labs(x = "Vertebrate richness", y = "Beetle richness")
-  # stat_smooth(method = 'lm', color = "gray50")
-p4 <- ggplot(comb_metrics_db, aes(s_vert,s_beet))+geom_point()+theme_pubr(base_size = 14)+
-  labs(x = "Vertebrate diversity", y = "Beetle diversity")
-# stat_smooth(method = 'lm')
-
-ggarrange(p1,p4, labels='auto')
 ####Things to check ####
 # Maybe analyze associations between large herbivores and specific dung beetle species/richness?
