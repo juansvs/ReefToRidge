@@ -39,71 +39,70 @@ daytemp_sum <- summarise(temp_data_day, max_T = max(LST), min_T = min(LST),
 #### Community composition #### 
 # Standardize matrices to account for different
 #effort across sites. We divide by effort
-effort <- tibble(site = rownames(comm)) %>%
-  left_join(select(allsites_cov_db, site, days)) %>%
-  pull(days) %>%
-  as.numeric()
-comm_std <- comm / effort
-##### Calculate disimilarities ####
-vert_dissim <- vegdist(comm_std)
-beet_dissim <- vegdist(commb)
+effort <- tibble(site = rownames(comm)) %>% 
+  left_join(read_csv("Data/ct_deployments.csv"),
+            by = join_by(site == deployment_id)) %>% 
+  pull(days) %>% as.numeric()
 
+comm_std <- comm / effort
+
+# Subset stations with available temp data
+comm_std <- comm_std[rownames(comm_std) %in% daytemp_sum$site,]
+commb <- commb[rownames(commb) %in% daytemp_sum$site, ]
+
+##### Calculate disimilarities ####
 # distance with the Jaccard turnover index
-vert_dissim_jac <- vegdist(comm, "jaccard", binary = TRUE)
+vert_dissim_jac <- vegdist(comm_std, "jaccard", binary = TRUE)
 beet_dissim_jac <- vegdist(commb, "jaccard", binary = TRUE)
 
 
 # distances with the Simpson nestedness index
-vert_dissim_sim <- designdist(comm, method = "J / pmin(A, B)",
+vert_dissim_sim <- designdist(comm_std, method = "J / pmin(A, B)",
                             terms = "binary", name = "Simpson")
 beet_dissim_sim <- designdist(commb, method = "J / pmin(A, B)",
                             terms = "binary", name = "Simpson")
 
 # covariates
-vert_covs_raw <- data.frame(site = rownames(comm)) %>%
+vert_covs_raw <- tibble(site = rownames(comm_std)) %>%
   left_join(allsites_cov_db) %>%
-  left_join(daytemp_sum) %>%
-  select(site, alt1, lc2, ghm1, lfdistance_2, max_T, min_T, mean_T,
-         sd_T, easting, northing, canopy_cover) 
+  inner_join(daytemp_sum) %>%
+  select(site, easting, northing, 
+         alt1, ghm1, lfdistance_2, 
+         mean_T, treecov_gfw_100) 
 # standardised
 vert_covs <- mutate(vert_covs_raw,
-                    lc = factor(lc2, labels = c("Dense", "Open")),
                     alt = standardise(alt1),
                     alt2 = standardise(alt1)^2,
                     ghm = ghm1,
                     fdist = log1p(lfdistance_2),
-                    tmax = standardise(max_T),
-                    tmin = standardise(min_T),
                     tmean = standardise(mean_T),
-                    tsd = standardise(sd_T),
-                    treecov = canopy_cover) %>%
-  select(lc, alt, alt2, ghm, fdist, tmax, tmin, tmean,
-         tsd, treecov, easting, northing)
+                    treecov = standardise(treecov_gfw_100)) %>%
+  select(alt, alt2, ghm, fdist, tmean,
+         treecov, easting, northing)
 # could also standardize using decostand
-beet_covs_raw <- data.frame(site = rownames(commb)) %>%
+beet_covs_raw <- tibble(site = rownames(commb)) %>%
   left_join(allsites_cov_db) %>%
-  left_join(daytemp_sum) %>%
-  select(site, easting, northing, alt1, lc2, ghm1, lfdistance_2, max_T, min_T,
-         mean_T, sd_T, canopy_cover)
-beet_covs <- mutate(beet_covs_raw, lc = factor(lc2, labels = c("Dense", "Open")),
+  inner_join(daytemp_sum) %>%
+  select(site, easting, northing,
+         alt1, ghm1, lfdistance_2,
+         mean_T, treecov_gfw_100)
+beet_covs <- mutate(beet_covs_raw, 
                     alt = standardise(alt1),
                     alt2 = standardise(alt1)^2,
                     ghm = ghm1,
                     fdist = log1p(lfdistance_2),
-                    tmax = standardise(max_T),
-                    tmin = standardise(min_T),
                     tmean = standardise(mean_T),
-                    tsd = standardise(sd_T),
-                    treecov = canopy_cover) %>%
-  select(easting, northing, lc, alt, alt2, ghm, fdist, tmax, tmin, tmean, tsd, treecov)
+                    treecov = treecov_gfw_100) %>%
+  select(easting, northing, alt, alt2, ghm, fdist,
+         tmean, treecov)
 
 ##### PERMANOVA #####
 
 # Analysis to see how the different variables affect the dissimilarity across
 # sites
-permanova_comp <- fit_models(make_models(vars = c("lc", "alt", "alt2","ghm", "fdist", "tmean", "tsd", "treecov", "pasture"),
+permanova_comp <- fit_models(make_models(vars = c("alt", "alt2","ghm", "fdist", "tmean", "tsd", "treecov"),
                                          k = 5), 
-                             com_data = comm_std, env_data = vert_covs)
+                             com_data = comm_std, env_data = vert_covs_raw)
 select_models(permanova_comp)
 # We compared different covariate combinations, and the one with the lowest AICc
 # included land cover, altitude, and alt^2. However, there are 12 other models
@@ -111,15 +110,18 @@ select_models(permanova_comp)
 # we could ignore it. The second best model includes mean temp instead of
 # altitude.
 
-# doing the same but removing some covariates (lc and altitude)
-permanova_comp2 <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture"),
-                                         k = 5), 
-                             com_data = comm_std, env_data = vert_covs)
+# doing the same but removing altitude
+all_perm_mods <- make_models(vars = c("ghm", "fdist", "tmean", "treecov"),
+                             ncores = 4,
+                             k = 4)
+permanova_comp2 <- fit_models(all_perm_mods, 
+                             com_data = comm_std,
+                             env_data = vert_covs)
 select_models(permanova_comp2)
 # we obtain AICc values ~ -139, with the best model including ghm, distance to
 # forest, and mean temperature, with a VIF of 1.82
 
-permanova_comp_beet <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "tsd", "treecov", "pasture")), 
+permanova_comp_beet <- fit_models(make_models(vars = c("ghm", "fdist", "tmean", "treecov")), 
                              com_data = commb, env_data = beet_covs)
 select_models(permanova_comp_beet)
 # In the case of beetles, there are 18 models that rank similarly. The top one
@@ -129,39 +131,39 @@ select_models(permanova_comp_beet)
 ### Same but using Jaccard binary index
 # doing the same but removing some covariates (lc and altitude)
 permanova_comp_jac <- fit_models(make_models(vars = c("ghm", "fdist",
-                                                      "tmean", "tsd", "treecov"),
+                                                      "tmean", "treecov"),
                                           k = 4), 
                               com_data = vert_dissim_jac, env_data = vert_covs)
-select_models(permanova_comp_jac)
 
 permanova_comp_beet_jac <- fit_models(make_models(vars = c("ghm", "fdist",
-                                                           "tmean", "tsd", "treecov"),
+                                                           "tmean", "treecov"),
                                                   k = 4), 
                                   com_data = beet_dissim_jac, env_data = beet_covs)
-select_models(permanova_comp_beet_jac)
 
 ### Same but using Simpson binary index
 permanova_comp_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean",
-                                                      "tsd", "treecov"),
+                                                      "treecov"),
                                              k = 4), 
                                  com_data = vert_dissim_sim, env_data = vert_covs)
-select_models(permanova_comp_sim)
 
 permanova_comp_beet_sim <- fit_models(make_models(vars = c("ghm", "fdist", "tmean",
-                                                           "tsd", "treecov"),
+                                                           "treecov"),
                                                   k = 4), 
                                       com_data = beet_dissim_sim, env_data = beet_covs)
+select_models(permanova_comp_jac)
+select_models(permanova_comp_beet_jac)
+select_models(permanova_comp_sim)
 select_models(permanova_comp_beet_sim)
 
 
 ## Run PERMANOVA
-vert_permanova <- adonis2(comm_std ~ fdist + tmean + ghm, data = vert_covs, method = 'bray', by = 'margin')
+vert_permanova <- adonis2(comm_std ~ fdist + tmean, data = vert_covs, method = 'bray', by = 'margin')
 beet_permanova <- adonis2(commb ~ fdist + tmean, data = beet_covs, method = 'bray', by = 'margin')
 vert_permanova
 beet_permanova
 
 # using jaccard index of turnover
-vert_permanova_jac <- adonis2(vert_dissim_jac ~ fdist + tmean + ghm + treecov, data = vert_covs, by = 'margin')
+vert_permanova_jac <- adonis2(vert_dissim_jac ~ fdist + tmean, data = vert_covs, by = 'margin')
 beet_permanova_jac <- adonis2(beet_dissim_jac ~ fdist + tmean, data = beet_covs, by = 'margin')
 vert_permanova_jac
 beet_permanova_jac
@@ -169,8 +171,8 @@ beet_permanova_jac
 # These results suggest that differences in species turnover for vertebrates are
 # influenced mostly by differences in temperature and distance to forest, with
 # some smaller effect of disturbance. These variables however explain only a
-# small proportion of the variance. The covariates do not seem to affect
-# nestedness at all.
+# small proportion of the variance, especially for beetles. The covariates do
+# not seem to affect nestedness at all.
 
 
 #####------ PCoA #####
@@ -185,13 +187,14 @@ vert_pcoa_sim <- pcoa(vert_dissim_sim)
 beet_pcoa_sim <- pcoa(beet_dissim_sim)
 
 # Fit environ variables
-vert_envfit_pcoa <- envfit(vert_pcoa$vectors~tmean + fdist + ghm, data = vert_covs)
-beet_envfit_pcoa <- envfit(beet_pcoa$vectors~tmean + fdist, data = beet_covs)
+vert_envfit_pcoa <- envfit(vert_pcoa$vectors ~ tmean + fdist, data = vert_covs)
+beet_envfit_pcoa <- envfit(beet_pcoa$vectors ~ tmean + fdist, data = beet_covs)
 
-vert_envfit_pcoa_jac <- envfit(vert_pcoa_jac$vectors ~ tmean + fdist + ghm + treecov, data = vert_covs)
+vert_envfit_pcoa_jac <- envfit(vert_pcoa_jac$vectors ~ tmean + fdist, data = vert_covs)
 beet_envfit_pcoa_jac <- envfit(beet_pcoa_jac$vectors ~ tmean + fdist, data = beet_covs)
 
-
+# scores
+scores(vert_envfit_pcoa_jac, display = "vectors")
 # Plot PCoA
 taxa_cols <- hcl.colors(2, "Geyser", rev = TRUE)
 # vertebrate PcOA
@@ -224,104 +227,98 @@ plot(beet_envfit_pcoa,
      bg = rgb(1, 1, 1, 0.5), col = "gray30")
 
 # Plot with result of Jaccard dissimilarity
+png("figures/PCoA.png", width = 8, height = 4, units = "in", res = 300)
 par(mfrow = c(1,2), mar = c(3, 3, 1, 1))
 ###
 plot(vert_pcoa_jac$vectors[, 1:2], las = 1, asp = 1,
      xlab = "Axis 1", ylab = "Axis 2", type = "n")
-points(vert_pcoa_jac$vectors, pch = 21, bg = 'turquoise')
+points(vert_pcoa_jac$vectors, pch = 17, col = taxa_cols[2])
 ordisurf(vert_pcoa_jac$vectors, vert_covs_raw$lfdistance_2,
          add = T, col = "gray50")
 plot(vert_envfit_pcoa_jac,
-     labels = list(vectors = c("Temp", "Dist", "gHM", "Canopy")),
-     bg = rgb(1, 1, 1, 0.5), col = "gray30", p.max = 0.05, arrow.mul = 0.6)
-mtext("a", side = 2, line = 2, padj = -9,  las = 2, font = 2)
+     labels = list(vectors = c("Temp", "Dist")),
+     bg = rgb(1, 1, 1, 0.5), col = "gray30", p.max = 0.05, arrow.mul = 0.4)
+mtext("a", side = 2, line = 2, padj = -12,  las = 2, font = 2)
 
 # PCoA for beetles
 plot(beet_pcoa_jac$vectors[, 1:2],
      type = "n", las = 1, asp = 1,
      xlab = "Axis 1", ylab = "Axis 2",
      pty = "s")
-points(beet_pcoa_jac$vectors, pch = 21, bg = "magenta")
-ordisurf(beet_pcoa_jac$vectors, beet_covs_raw$mean_T-273.15,
+points(beet_pcoa_jac$vectors, pch = 16, col = taxa_cols[1])
+ordisurf(beet_pcoa_jac$vectors, beet_covs_raw$mean_T,
          add = T, col = "gray50")
 plot(beet_envfit_pcoa_jac,
-     labels = list(vectors = c("Temp", "F dist")),
+     labels = list(vectors = c("Temp", "Dist")),
      bg = rgb(1, 1, 1, 0.5), col = "gray30", arrow.mul = 0.6)
-mtext("b", side = 2, line = 2, padj = -9, las = 2, font = 2)
-
-
-###
-par(mfrow = c(1, 1))
-
-##### NMDS #####
-vert_NMDS <- metaMDS(comm_std, trymax = 100)
-beet_NMDS <- metaMDS(commb, trymax = 100) # MS134 plots very separate from the rest. (Stick with PCoA)
-
-# Fit environ variables
-vert_envfit_nmds <- envfit(vert_NMDS, vert_covs)
-beet_envfit_nmds <- envfit(beet_NMDS, beet_covs)
-
-par(mfrow = c(1, 2))
-plot(vert_NMDS, type = "none", main = "Vertebrates")
-points(vert_NMDS, select = vert_covs$lc == "Open", col = "goldenrod", pch = 17)
-points(vert_NMDS, select = vert_covs$lc == "Dense", col = "darkgreen", pch = 16)
-ordiellipse(vert_NMDS, groups = vert_covs$lc, col = c("darkgreen", "goldenrod"))
-text(vert_NMDS, display = "species", cex = 0.8)
-plot(vert_envfit_nmds, col = "blue", cex = 0.8, p.max = 0.05)
-
-plot(beet_NMDS, type = "none", main = "Beetles")
-points(beet_NMDS, select = beet_covs$lc == "Open", col = "goldenrod", pch=17)
-points(beet_NMDS, select = beet_covs$lc == "Dense", col = "darkgreen", pch=16)
-ordiellipse(beet_NMDS, groups = beet_covs$lc, col = c("darkgreen", "goldenrod"))
-text(beet_NMDS, display = "species", cex = 0.8)
-plot(beet_envfit_nmds, col = "blue", cex = 0.8, p.max = 0.05)
-
+mtext("b", side = 2, line = 2, padj = -12, las = 2, font = 2)
+dev.off()
 #### Diversity and richness ####
 
 ##### ggplots #####
+# richness vs alt.
+
+
+# richness vs T
 p1 <- data.frame(n = specnumber(comm), vert_covs_raw) %>%
   ggplot(aes(mean_T - 273.15, n)) +
   geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5))+
   labs(x = expression(paste("Mean temperature (",degree*C, ")")),
        y = "Species richness") +
   theme_pubr()
+
+p5 <- data.frame(n = specnumber(commb),beet_covs_raw) %>%
+  ggplot(aes(mean_T - 273.15, n)) +
+  geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
+  labs(x = expression(paste("Mean temperature (",degree*C, ")")),
+       y = "Species richness") +
+  theme_pubr()
+
+# diversity vs T
 p2 <- data.frame(n = diversity(comm), vert_covs_raw) %>%
   ggplot(aes(mean_T - 273.15, n)) +
   geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
   labs(x = expression(paste("Mean temperature (",degree*C, ")")),
-       y = "Species richness") +
+  y = "Diversity") +
   theme_pubr()
-  ggplot(aes(mean_T - 273.15, n)) +
-  geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
-  labs(x = expression(paste("Mean temperature (",degree*C, ")")),
-       y = "Species richness") +
-  theme_pubr()
+
+
 p6 <- data.frame(n = diversity(commb), beet_covs_raw) %>%
   ggplot(aes(mean_T - 273.15, n))+
   geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
   labs(x = expression(paste("Mean temperature (", degree*C, ")")),
        y = "Diversity") +
   theme_pubr()
-p8 <- data.frame(n = diversity(commb), beet_covs_raw) %>%
-  ggplot(aes(sd_T, n)) +
-  geom_point(shape = 16, size = 2, color = rgb(0, 0, 0, 0.5)) +
-  labs(x = expression(paste("St.dev. temperature (", degree*C, ")")),
-       y = "Diversity") +
-  theme_pubr()
 
-##### Vert richness #####
-vert_gam_db <- data.frame(s = diversity(comm), n = specnumber(comm), vert_covs)
-beet_gam_db <- data.frame(s = diversity(commb), n = specnumber(commb), beet_covs)
-plot(vert_gam_db)
-plot(beet_gam_db)
+# new plots
+pvertrich2 <- data.frame(n = specnumber(comm),vert_covs_raw) %>%
+  ggplot(aes(alt1, n)) +
+  geom_point(aes(color = lfdistance_2 + 1), show.legend = FALSE) +
+  labs(x = "Altitude (masl)", y = "Species richness",
+       color = "Distance to forest") +
+  theme_pubr() +
+  theme(palette.color.continuous = hcl.colors(3, "Greens")) +
+  coord_cartesian(xlim = c(0, 2550), ylim = c(0, 16))
+pvertrich2
 
-# Sites with higer richness also have higher diversity for both verts and
-# beetles
-# Vertebrate richness linear model
-vert_rich_lm <- gam(n ~ lc + ghm + alt + fdist,
-                    family = poisson, data = vert_gam_db)
-# Full GAM, with smooths for all covars
-vert_rich_gam <- gam(n ~ lc + s(ghm) + s(alt) + s(fdist),
+pbeetrich2 <- data.frame(n = specnumber(commb), beet_covs_raw) %>%
+  ggplot(aes(alt1, n)) +
+  geom_point(aes(color = lfdistance_2 + 1)) +
+  labs(x = "Altitude (masl)", y = "Species richness",
+       color = "Distance to forest") +
+  theme_pubr() +
+  theme(palette.color.continuous = hcl.colors(3, "Greens")) +
+  coord_cartesian(xlim = c(0, 2550), ylim = c(0, 16))
+pbeetrich2
+
+# Join
+ggarrange(pvertrich2, pbeetrich2, 
+          labels = "auto",
+          legend.grob = get_legend(pbeetrich2, position = "top"), legend = "top")
+ggsave("figures/richness_vs_alt_fdist.png", dpi = 300, width = 7, height = 4)
+
+
+
 #### Richness models ####
 ##### Vertebrates #####
 vert_gam_db <- data.frame(n = specnumber(comm), vert_covs_raw)
