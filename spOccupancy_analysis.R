@@ -68,7 +68,7 @@ y_df <- left_join(DAT, select(allsites_cov_db, site)) %>%
 nsp <- length(unique(y_df$common_name))
 nst <- length(unique(y_df$site))
 nocc <- max(y_df$smplmon)
-nsp * nst * nocc # 24080
+nsp * nst * nocc # 25810
 mody <- array(data = as.numeric(y_df$n > 0), dim = c(nsp, nst, nocc),
               dimnames = list(species = unique(y_df$common_name),
                               sites = unique(y_df$site),
@@ -78,21 +78,21 @@ mody <- mody[sp_order, , ]
 covs_df <- distinct(y_df, site) %>%
   left_join(allsites_cov_db) %>%
   left_join(daytemp_sum) %>%
-  select(site, easting, northing, ghm1, lc2, alt1, lfdistance_2,
-         mean_T, sd_T, treecov_gfw_100, pasture_gfw_prop) %>%
-  rename(x = easting, y = northing, forest = lc2, fdist = lfdistance_2, alt = alt1,
-         ghm = ghm1, treecov = treecov_gfw_100, pasture = pasture_gfw_prop) %>%
-  mutate(forest = factor(forest, labels = c("Dense", "Open")))
+  select(site, easting, northing, ghm1, alt1, lfdistance_2,
+         mean_T, sd_T, treecov_gfw_100) %>%
+  rename(x = easting, y = northing, fdist = lfdistance_2, alt = alt1,
+         ghm = ghm1, treecov = treecov_gfw_100)# %>%
+#  mutate(forest = factor(forest, labels = c("Dense", "Open")))
 moddata <- list(y = mody,
-                occ.covs = covs_df[, c("forest", "fdist", "alt", "ghm", "mean_T",
-                                       "sd_T", "treecov", "pasture")],
+                occ.covs = covs_df[, c("fdist", "alt", "ghm", "mean_T",
+                                       "sd_T", "treecov")],
                 # det.covs = covs_df[,"site"],
                 coords = as.matrix(covs_df[, c("x", "y")]))
 
 # Priors
 sitedists <- dist(moddata$coords)# distance between sites
-mindist <- min(sitedists)
-maxdist <- max(sitedists)
+mindist <- min(sitedists) # 175
+maxdist <- max(sitedists) # 96367
 prior_list <- list(phi.unif = list(3 / maxdist, 3 / mindist))
 
 # initial values
@@ -122,7 +122,7 @@ sfmod_null <- sfMsPGOcc(
 )
 summary(sfmod_null)
 waicOcc(sfmod_null)
-# Null model wAIC: 8053.92 The convergence for the spatial covariance terms is
+# Null model wAIC: 8325.3653 The convergence for the spatial covariance terms is
 # quite poor (rhats 1.10, 1.29, 3.78). Maybe try longer chains (6000->30000)
 # with more burn (4000->10000) thinning (2->50), or more factors (3->4)
 sfmod_null_updated <- update(sfmod_null,
@@ -136,7 +136,7 @@ sfmod_null_updated$k.fold.deviance
 sfmod_null$k.fold.deviance
 # there isn't a huge difference in the k-fold deviance, some higher, some lower
 waicOcc(sfmod_null_updated)
-# 8030.48, much lower than the non-updated model
+# 8299, lower than the non-updated model
 summary(ppcOcc(sfmod_null_updated, "freeman-tukey", group = 1))
 # the model seems to have low Bayesian p-values for common spp
 # (e.g. p = 0 for agoutis)
@@ -144,7 +144,7 @@ summary(ppcOcc(sfmod_null_updated, "freeman-tukey", group = 1))
 # Create alternative models with covars
 sfmod_full <- update(sfmod_null,
   occ.formula = ~ treecov + ghm + scale(mean_T) + log(fdist + 1),
-  n.factors = 5, n.batch = 600, n.burn = 5000, n.thin = 25
+  n.factors = 5, n.batch = 600, n.burn = 5000, n.thin = 50
 )
 summary(sfmod_full)
 # there is still limited sample size for the spatial covariance latent factors
@@ -170,30 +170,30 @@ sfmod_temp <- update(sfmod_full, occ.formula = ~ scale(mean_T))
 
 
 # Compare models based on wAIC
-waicOcc(sfmod_null)    # waic of 9056.26
-waicOcc(sfmod_full)    # 7992.78
-waicOcc(sfmod_disttemp) # 7984.36
-waicOcc(sfmod_ghmtemp) # 7985.22
-waicOcc(sfmod_temp)    # 7984.75
-#' The model with only temperature and the one with ghm and
-#' temp are comparable, although the one with only temperature
+waicOcc(sfmod_null)    # waic of 9056.26 -> 8325.3653
+waicOcc(sfmod_full)    # 7992.78 -> 8263.3878
+waicOcc(sfmod_disttemp) # 7984.36 -> 8257.4249
+waicOcc(sfmod_ghmtemp) # 7985.22 -> 8257.2380
+waicOcc(sfmod_temp)    # 7984.75 -> 8250.6347
+#' The model with only temperature 
 #' had the lowest wAIC
-waicOcc(sfmodalt)     # wAIC = 8079
-waicOcc(sfmodalt2)    # wAIC = 8058 -> 7995.71
-waicOcc(sfmodalt2ghm) # wAIC = 8054 -> 7997.57
-waicOcc(sfmodaltghm)  # wAIC = 8079 -> 8002.8
-waicOcc(sfmodaltlc)   # wAIC = 8091
-waicOcc(sfmodalt2lc)  # wAIC = 8064 -> 8002.06
-waicOcc(sfmodtempalt2lc) # wAIC = 8981.96
-waicOcc(sfmodtemplc)  # wAIC = 8981.04
+#' 
+# waicOcc(sfmodalt)     # wAIC = 8079
+# waicOcc(sfmodalt2)    # wAIC = 8058 -> 7995.71
+# waicOcc(sfmodalt2ghm) # wAIC = 8054 -> 7997.57
+# waicOcc(sfmodaltghm)  # wAIC = 8079 -> 8002.8
+# waicOcc(sfmodaltlc)   # wAIC = 8091
+# waicOcc(sfmodalt2lc)  # wAIC = 8064 -> 8002.06
+# waicOcc(sfmodtempalt2lc) # wAIC = 8981.96
+# waicOcc(sfmodtemplc)  # wAIC = 8981.04
 # lowest wAIC is given by full model. The spatial covariance
 # is not properly estimated though.
 
 
 # Model summary
-summary(sfmod_disttemp)
+summary(sfmod_temp)
 # Phi estimates have rhat>>1.1 (2,4). Intercept and alt2 also have Rhat>1.1.
-plot(sfmod_disttemp, "beta", dens = FALSE)
+plot(sfmod_temp, "beta", dens = FALSE)
 
 # Models without spatial covariates.
 lf_mod_full <- lfMsPGOcc(
@@ -226,19 +226,24 @@ waicOcc(basemodalt2) # 8220, among the worst models
 
 # the model with the species correlations has lower wAIC,
 # and therefore a better fit
-bestvertmod <- sfmod_disttemp
+bestvertmod <- sfmod_temp
 # diagnostics
-ppc_out <- ppcOcc(sfmod_disttemp, fit.stat = "freeman-tukey", group = 1)
+ppc_out <- ppcOcc(bestvertmod, fit.stat = "freeman-tukey", group = 1)
 summary(ppc_out)
-# The full model's Bayesian p value is 0.246, so not terrible,
-# but rather low (0.5 is good, <0.1 or >0.9 is poor). The fit is
-# terrible for agoutis (p=0), and p<0.1 for collared peccaries, tayras,
-# curassows, pumas, pacas, and coatis, all of which are rather common.
-
+# The full model's Bayesian p value is 0.0417, so quite bad (0.5 is good, <0.1
+# or >0.9 is poor). The fit is terrible for agoutis (p=0), and p<0.1 for
+# collared peccaries, tayras, curassows, pumas, pacas, and coatis, all of which
+# are rather common.
+sink("out.txt")
+summary(sfmod_disttemp, digits = 2)
+summary(sfmodbeetfull, digits = 2)
+sink()
 ### Plots ####
 
 ##### Coef plot ####
-betas <- sfmod_disttemp$beta.samples
+betas <- sfmod_temp$beta.samples
+
+summary(betas)
 # plot occupancy vs predictor values for every sp
 data.frame(coef = colnames(betas),
            mean = colMeans(betas),
@@ -335,15 +340,15 @@ filter(preddb, sp %in% c("tinamou_great", "jaguar", "ocelot",
 
 #### Beetles ####
 dat_beet <- read.csv("Data/dung_beetles_prc.csv") %>%
-  select(-Date) %>%
+  select(-c(Date, Plot)) %>%
   # join traps from same station
-  summarise(.by = Plot, across(where(is.numeric), sum)) %>%
-  inner_join(select(allsites_cov_db, site), by = join_by("Plot" == "site"))
+  summarise(.by = site, across(where(is.numeric), sum)) %>%
+  inner_join(select(allsites_cov_db, site))
 # create sp matrix
 beet_sp_mat <- dat_beet %>%
-  column_to_rownames("Plot") %>%
+  column_to_rownames("site") %>%
   mutate(across(seq_len(ncol(.)), \(x) as.numeric(x > 0))) %>% # make binary
-  select(where(\(x) sum(x) > 3)) %>% # only species present at multiple sites
+  select(where(\(x) sum(x) > 3)) %>% # only species present at multiple (>3) sites
   filter(rowSums(.) > 0) %>% # filter empty sites
   as.matrix() %>%
   t() # transpose
@@ -352,20 +357,19 @@ beet_sp_mat <- dat_beet %>%
 beet_covs <- tibble(site = colnames(beet_sp_mat)) %>%
   left_join(allsites_cov_db) %>%
   left_join(daytemp_sum) %>%
-  select(site, easting, northing, ghm1, lc2, alt1, lfdistance_2,
-         mean_T, sd_T, treecov_gfw_100, pasture_gfw_prop) %>%
-  mutate(lc2 = lc2 == 10) %>%
+  select(site, easting, northing, ghm1, alt1, lfdistance_2,
+         mean_T, sd_T, treecov_gfw_100) %>%
   rename(x = easting, y = northing, alt = alt1, ghm = ghm1,
-         forest = lc2, fdist = lfdistance_2, treecov = treecov_gfw_100,
-         pasture = pasture_gfw_prop, tmean = mean_T) %>%
+         fdist = lfdistance_2, treecov = treecov_gfw_100,
+        tmean = mean_T) %>%
   column_to_rownames("site") %>%
   as.matrix()
 
 beet_data <- list(y = beet_sp_mat,
-                  covs = beet_covs[, c("forest", "alt", "ghm", "fdist",
-                                       "treecov", "pasture", "tmean")],
+                  covs = beet_covs[, c("alt", "ghm", "fdist",
+                                       "treecov", "tmean")],
                   coords = beet_covs[, c("x", "y")])
-#### run JSDM model ####
+#### JSDM model ####
 beet_jsdm_null <- lfJSDM(formula = ~1,
                          data = beet_data,
                          n.samples = 2000, n.thin = 2, n.chains = 3,
@@ -463,12 +467,12 @@ beet_sp_mat2 <- read.csv("Data/dung_beetles_prc.csv") %>%
   pivot_longer(2:68, names_to = "sp", values_to = "pres") %>%
   filter(sum(pres) > 0, .by = site) %>% # filter empty sites
   complete(nesting(occ, site), sp, fill = list(n = 0)) %>% # make missing species explicit
-  complete(occ, site, sp) %>% 
+  complete(occ, site, sp) %>% # add explicit occasions that dit not occur
   arrange(occ, site, sp)
 nsp <- length(unique(beet_sp_mat2$sp))
 nst <- length(unique(beet_sp_mat2$site))
 nocc <- length(unique(beet_sp_mat2$occ))
-nsp * nst * nocc
+nsp * nst * nocc # 34840
 
 beetmody <- array(data = beet_sp_mat2$pres, dim = c(nsp, nst, nocc),
                   dimnames = list(species = unique(beet_sp_mat2$sp),
@@ -492,19 +496,20 @@ lfmodbeetnull <- lfMsPGOcc(occ.formula = ~1,
                            det.formula = ~1,
                            data = beet_data_occ,
                            n.samples = 1000, n.thin = 2,
-                           n.chains = 3, n.factors = 4) # wAIC 3444
+                           n.chains = 3, n.factors = 4) # wAIC 3453.0380
 
 lfmodbeetfull <- update(lfmodbeetnull,
-                        occ.formula = ~ghm + scale(treecov) + log(fdist + 1) + scale(mean_T)) # wAIC 3328
-waicOcc(lfmodbeetfull)
-waicOcc(m1 <- update(lfmodbeetnull,
-               occ.formula = ~scale(mean_T) + scale(treecov)))
+                        occ.formula = ~ghm + scale(treecov) + log(fdist + 1) + scale(mean_T),
+                        n.thin = 4) # wAIC 3328
+waicOcc(lfmodbeetfull) # 3331.9274
+waicOcc(m1 <- update(lfmodbeetfull,
+               occ.formula = ~ scale(mean_T)))
 rm(m1)
 # no model seems to perform better than the full model
 
 # Spatial models
-sfmodbeetfull <- sfMsPGOcc(occ.formula = ~ghm + scale(treecov) + log(fdist + 1) + scale(mean_T),
-                           det.formula = ~1,
+sfmodbeetfull <- sfMsPGOcc(occ.formula = ~ ghm + scale(treecov) + log(fdist + 1) + scale(mean_T),
+                           det.formula = ~ 1,
                            data = beet_data_occ,
                            n.neighbors = 10,
                            n.factors = 4,
@@ -512,10 +517,38 @@ sfmodbeetfull <- sfMsPGOcc(occ.formula = ~ghm + scale(treecov) + log(fdist + 1) 
                            n.burn = 5000,
                            n.thin = 50,
                            batch.length = 25) # waic 3321, lower than the full model without spatial covars
+waicOcc(sfmodbeetfull) # 3346
+m1 <- update(sfmodbeetfull,
+             occ.formula = ~ ghm + scale(treecov) + scale(mean_T),
+             n.thin = 20) 
+waicOcc(m1) # 
+# waic: 
+# null: 3342
+# dist + T: -> 3362
+# T: 3342 -> 3350
+# ghm: 3334.78 -> 3346
+# treecov: 3345
+# ghm + dist: 3339 -> 3353
+# ghm + T : 3327 -> 3345.9895
+# ghm + T + treecov: 3328 -> 3341.4847
+# ghm + T + fdist: 3338 -> 3349
+# treecov + fdist + T: 3344
+# treecov + ghm: 3331 -> 3346
+
+# seems the best model is the model with ghm, temp, and tree cover. However, the
+# non-spatial model performed better.
+rm(m1)
+sfmodbeet_best <- update(sfmodbeetfull,
+                         occ.formula = ~ ghm + scale(treecov) + scale(mean_T),
+                         n.thin = 20) 
+summary(sfmodbeet_best, level = "species", digits = 2)
+
+
 #### Plots ####
 bestbeetmod <- beet_jsdm_ghmtemp
+
 ##### Parameter plots ####
-beetbetas <- bestbeetmod$beta.samples
+beetbetas <- lfmodbeetfull$beta.samples
 data.frame(coef = colnames(beetbetas),
            mean = colMeans(beetbetas),
            lq = apply(beetbetas,2,quantile, prob = 0.025),
@@ -575,3 +608,7 @@ filter(preddb, sp %in% c("Onthophagus_acuminatus", "Coprophanaeus_telamon",
   scale_color_manual(values = c("skyblue4", "indianred4")) +
   theme(strip.background = element_blank(),
         panel.border = element_rect(fill = NA))
+
+#### export best models ####
+saveRDS(sfmod_temp, "vert_sfmod.rds")
+saveRDS(lfmodbeetfull, "beet_lfmod.rds")
