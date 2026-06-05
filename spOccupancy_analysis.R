@@ -10,10 +10,7 @@ library(tidyverse)
 #### Vertebrates ####
 allsites_pts <- terra::vect("Data/combined_survey_pts.geojson")
 allsites_cov_db <- as.data.frame(allsites_pts)
-# campts_db <- filter(as.data.frame(allsites_pts), has_cam==1)
 
-# camvect <- vect("Data/ct_covars.geojson")
-# campts_db <- as.data.frame(camvect) %>% mutate(site = gsub("#", "", deployment_id), days = as.numeric(days))
 data_raw <- read_csv("Data/ct_records.csv",
   col_types = cols_only(deployment_id = "c",
                         common_name = "c",
@@ -25,7 +22,9 @@ cams_include <- summarise(data_raw, .by = deployment_id,
   filter(t > 12 * 7) %>%
   mutate(site = sub("#", "", deployment_id)) %>%
   select(site)
-DAT <- read_csv("Data/records_wild.csv") %>% inner_join(cams_include)
+DAT <- read_csv("Data/records_wild.csv") %>% 
+  mutate(site = gsub("#", "", site)) %>% 
+  inner_join(cams_include)
 ### temperature data ###
 temp_data_day <- read.csv("Data/LST_2020_allsites_day.csv",
                           col.names = c("date", "LST", "site")) %>%
@@ -51,9 +50,10 @@ sp_order <- c("central_american_agouti", "oncilla", "baird's_tapir",
 
 #### Model prep ####
 # model data
-y_df <- filter(DAT, !grepl("uid", common_name)) %>%
-  left_join(select(allsites_cov_db, site)) %>%
+y_df <- left_join(DAT, select(allsites_cov_db, site)) %>%
   left_join(daytemp_sum) %>%
+  # filter stations without temp
+  filter(!is.na(mean_T)) %>% 
   mutate(smplwk = as.numeric(1 + floor(difftime(timestamp,
                                                 min(timestamp),
                                                 units = "weeks"))),
