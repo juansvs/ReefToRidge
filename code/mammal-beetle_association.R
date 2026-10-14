@@ -133,15 +133,20 @@ rownames(perm_pvals) <- vertnames
 colnames(perm_pvals) <- beetnames
 
 # bipartite network
+link_cols <- colorRamp(hcl.colors(10, "YlOrBr"))(coocc_indices / max(coocc_indices)) |> 
+  rgb(maxColorValue = 255)
+png("figures/bipartite_plot.png", width = 8, height = 6, units = "in", res = 300)
 plotweb(t(perm_pvals < 0.05),
         sorting = "dec",
+        empty = TRUE,
         horizontal = TRUE,
         lower_italic = TRUE,
-        text_size = 0.5,
+        text_size = 1,
         scaling = "relative", 
-        lower_color = "dodgerblue",
-        higher_color = "goldenrod",
-        link_color = "gray"
+        curved_links = TRUE,
+        lower_color = taxa_cols[1],
+        higher_color = taxa_cols[2],
+        link_color = link_cols
         )
 apply(perm_pvals < 0.05, 2, mean) |> sort()
 apply(perm_pvals < 0.05, 1, mean) |> sort()
