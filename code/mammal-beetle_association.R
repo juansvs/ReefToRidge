@@ -88,7 +88,8 @@ dim(coocc_permuts)
 
 
 # Base co-occurrence observed togetherness Ts
-coocc_indices <- array(dim = c(ncol(comm_commonsites), ncol(commb_commonsites)))
+coocc_indices <- array(dim = c(ncol(comm_commonsites),
+                               ncol(commb_commonsites)))
 for (i in 1 : ncol(comm_commonsites)) {
   for(j in 1 : ncol(commb_commonsites)) {
     # create the presence matrices
