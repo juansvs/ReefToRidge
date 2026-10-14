@@ -11,23 +11,28 @@ library(tidyverse)
 
 #### Read in data ####
 data_raw <- read_csv("Data/ct_records.csv",
-                     col_types = cols_only(deployment_id = 'c', common_name = 'c', timestamp = col_datetime("%Y-%m-%d %H:%M") ))
 stn_data_raw <- read_csv("Data/ct_deployments.csv", 
                          col_select = c(deployment_id, placename, longitude, latitude,start_date, end_date))
+                     col_types = cols_only(deployment_id = 'c',
+                                           common_name = 'c',
+                                           timestamp = col_datetime("%Y-%m-%d %H:%M") ))
 data_raw
 stn_data_raw
 
 #### check times and dates ####
 # check times
-ggplot(data_raw, aes(hour(timestamp)))+geom_histogram(binwidth = 1)
+ggplot(data_raw, aes(hour(timestamp))) +
+  geom_histogram(binwidth = 1)
 # dates
-ggplot(data_raw, aes(timestamp, deployment_id))+stat_summary(fun.min = min,fun.max = max,geom = "linerange")
+ggplot(data_raw, aes(timestamp, deployment_id)) +
+  stat_summary(fun.min = min,fun.max = max,geom = "linerange")
 # there is a wrong date, that has year 2035, let's find and correct.
-data_raw %>% slice_max(timestamp,n=10)
+data_raw %>% slice_max(timestamp, n=10)
 # The problem is three records from station 129, possibly due to a malfunction.
 # The records are of nothing so can be ignored
 filter(data_raw, common_name!="Nothing") %>% 
-  ggplot(aes(timestamp, deployment_id))+stat_summary(fun.min = min,fun.max = max,geom = "linerange")
+  ggplot(aes(timestamp, deployment_id)) +
+  stat_summary(fun.min = min,fun.max = max,geom = "linerange")
 # There is still one camera that has a deployment period earlier than all the
 # rest, around march 2019 rather than 2020.
 slice_min(data_raw, timestamp,n=10)
@@ -47,7 +52,7 @@ unique(stn_data_raw$deployment_id)[which(!unique(stn_data_raw$deployment_id) %in
 # There are three stations that were not represented in the records, 111, 72,
 # and 175. 
 filter(data_raw,is.na(deployment_id)) %>% reframe(range(timestamp))
-filter(stn_data_raw,deployment_id %in% c("MS#111","MS#175","MS#72"))
+filter(stn_data_raw, deployment_id %in% c("MS#111","MS#175","MS#72"))
 # The dates for NA cameras go from 25-1-20 to 6-7-20. These dates match the
 # deployment period of MS#111, I will change the NAs to this station
 data1 <- mutate(data_raw, deployment_id = replace(deployment_id, is.na(deployment_id),"MS#111"))
@@ -107,9 +112,10 @@ data_wild
 
 #### Independent events #### 
 # We need to keep only independent events. We will set a five minute threshold to classify two detections as indep
-data_wild <- arrange(data_wild,deployment_id,common_name,timestamp) %>% group_by(deployment_id, common_name) %>% 
+data_wild <- arrange(data_wild, deployment_id, common_name, timestamp) %>% 
+  group_by(deployment_id, common_name) %>% 
   mutate(tdif = difftime(lead(timestamp), timestamp, units = "mins")) %>% 
-  filter(is.na(tdif) | tdif>duration(5,"mins")) %>% 
+  filter(is.na(tdif) | tdif  >duration(5, "mins")) %>% 
   ungroup()
 
 # this reduces to 8074 independent events, of 32 different taxa. This includes
